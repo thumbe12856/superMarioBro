@@ -1,0 +1,6 @@
+tmp/*
+model/*
+distance/*
+*.pyc
+curiosity/*
+
