@@ -16,16 +16,16 @@ from constants import constants
 use_tf12_api = distutils.version.LooseVersion(tf.VERSION) >= distutils.version.LooseVersion('0.12.0')
 
 testingCounter = 0
-logDirCounter = 1200000
+logDirCounter = 500000
 nowDistance = 0
 nowMaxDistance = 0
 lastDistance = 0
-normalizationParameter = 40.0
+normalizationParameter = 30.0
 distance_list = []
 fixed_level = 2
 
 EPS_START = 0.9  # e-greedy threshold start value
-EPS_END = 0.1  # e-greedy threshold end value
+EPS_END = 0.2  # e-greedy threshold end value
 EPS_DECAY = 100000  # e-greedy threshold decay
 EPS_threshold = 1
 EPS_step = 0
@@ -55,7 +55,8 @@ def process_rollout(rollout, gamma, lambda_=1.0, clip=False):
     # V_t <-> r_t + gamma*r_{t+1} + ... + gamma^n*r_{t+n} + gamma^{n+1}*V_{n+1}
     rewards_plus_v = np.asarray(rollout.rewards + [rollout.r])  # bootstrapping
     if rollout.unsup:
-        rewards_plus_v += np.asarray(rollout.bonuses + [0])
+        #rewards_plus_v += np.asarray(rollout.bonuses + [0])
+        rewards_plus_v += np.asarray(rollout.bonuses + [-rollout.bonuses[-1]])
     if clip:
         rewards_plus_v[:-1] = np.clip(rewards_plus_v[:-1], -constants['REWARD_CLIP'], constants['REWARD_CLIP'])
     batch_r = discount(rewards_plus_v, gamma)[:-1]  # value network target
@@ -190,8 +191,8 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
         for _ in range(num_local_steps):
             # run policy
             fetched = policy.act(last_state, *last_features)
-            #action, value_, features = fetched[0], fetched[1], fetched[2:]
-            action, value_, all_action, features = fetched[0], fetched[1], fetched[2], fetched[3:]
+            action, value_, features = fetched[0], fetched[1], fetched[2:]
+            #action, value_, all_action, features = fetched[0], fetched[1], fetched[2], fetched[3:]
             
 
 
@@ -223,11 +224,15 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
             if(nowDistance > nowMaxDistance):
                 nowMaxDistance = nowDistance
                 #EPS_step = EPS_step + 1
+            if(nowMaxDistance >= 800):
+                EPS_END = 0.05
 
             if noReward:
                 reward = 0.
+            """
             if render:
                 env.render()
+            """
 
             #rollout.add(self, state, action, reward, value, terminal, features, bonus=None, end_state=None)
             curr_tuple = [last_state, action, reward, value_, terminal, last_features]
@@ -259,10 +264,14 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
                 bonus = bonus + diff
                 
                 if(terminal):
-                    if(nowDistance < 3200):
-                        bonus = -1
+                    if(not (nowDistance < 3200)):
+                        bonus = 1
+                        """
+                        if(len(rollout.bonuses) > 0):
+                            bonus = -rollout.bonuses[-1]
                     else:
                         bonus = 1
+                        """
 
                 curr_tuple += [bonus, state]
                 life_bonus += bonus
@@ -287,18 +296,6 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
                 else:
                     print("Episode finished. Sum of shaped rewards: %.2f. Length: %d." % (rewards, length))
                 if 'distance' in info: print('Mario Distance Covered:', info['distance'])
-
-                """
-                print('++++++++++++++++++++++++++')
-                print(info['distance'])
-                print(type(info['distance']))
-                distance_list.append(info['distance'])
-                df = pd.DataFrame([], columns=["distance"])
-                df['distance'] = distance_list
-                #df.to_csv('./fine_tune_model/1-2/20w/distance' + str(task) + '.csv', index=False)
-                df.to_csv('./distance' + str(task) + '.csv', index=False)
-                print('++++++++++++++++++++++++++')
-                """
 
                 global normalizationParameter
                 print("normalizationParameter: {0}".format(normalizationParameter))
@@ -583,7 +580,7 @@ class A3C(object):
             if fetched[-1] >= logDirCounter and self.task == 0:
                 # copy subdirectory example
                 fromDirectory = "./tmp/ac4_fine_tuned_1_3"
-                toDirectory = "./model/1-3/ac1_fine_tuned_1_3/40/ac4/" + str(self.task) + "_" + str(logDirCounter) + ".bk/"
+                toDirectory = "./model/1-3/ac1_fine_tuned_1_3/30/ac4/" + str(self.task) + "_" + str(logDirCounter) + ".bk/"
                 logDirCounter = logDirCounter + 100000
 
                 copy_tree(fromDirectory, toDirectory)
