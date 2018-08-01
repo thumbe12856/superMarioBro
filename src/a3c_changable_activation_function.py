@@ -20,13 +20,13 @@ logDirCounter = 500000
 nowDistance = 0
 nowMaxDistance = 0
 lastDistance = 0
-normalizationParameter = 40.0
+normalizationParameter = 30.0
 distance_list = []
 fixed_level = 0
 
 EPS_START = 0.9  # e-greedy threshold start value
-EPS_END = 0.1  # e-greedy threshold end value
-EPS_DECAY = 100000  # e-greedy threshold decay
+EPS_END = 0.05  # e-greedy threshold end value
+EPS_DECAY = 10000  # e-greedy threshold decay
 EPS_threshold = 1
 EPS_step = 0
 
@@ -56,7 +56,7 @@ def process_rollout(rollout, gamma, lambda_=1.0, clip=False):
     rewards_plus_v = np.asarray(rollout.rewards + [rollout.r])  # bootstrapping
     if rollout.unsup:
         #rewards_plus_v += np.asarray(rollout.bonuses + [0])
-        rewards_plus_v += np.asarray(rollout.bonuses)
+        rewards_plus_v += np.asarray(rollout.bonuses + [-rollout.bonuses[-1]])
     if clip:
         rewards_plus_v[:-1] = np.clip(rewards_plus_v[:-1], -constants['REWARD_CLIP'], constants['REWARD_CLIP'])
     batch_r = discount(rewards_plus_v, gamma)[:-1]  # value network target
@@ -220,15 +220,13 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
             lastDistance = nowDistance
             nowDistance = info['distance']
 
-            # epsilon greedy iteration
-            if(nowDistance > nowMaxDistance):
-                nowMaxDistance = nowDistance
-                #EPS_step = EPS_step + 1
-
+            
             if noReward:
                 reward = 0.
+            """
             if render:
                 env.render()
+            """
 
             #rollout.add(self, state, action, reward, value, terminal, features, bonus=None, end_state=None)
             curr_tuple = [last_state, action, reward, value_, terminal, last_features]
@@ -260,11 +258,19 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
                 bonus = bonus + diff
                 
                 if(terminal):
-                    if(nowDistance < 3200):
+                    if(not (nowDistance < 3200)):
+                        bonus = 1
+                        """
                         if(len(rollout.bonuses) > 0):
                             bonus = -rollout.bonuses[-1]
                     else:
                         bonus = 1
+                        """
+
+                if(nowDistance / 100 > nowMaxDistance / 100):
+                    nowMaxDistance = nowDistance
+                    bonus = bonus + 1
+                    rollout.bonuses = [b + 1 for b in rollout.bonuses]
 
                 curr_tuple += [bonus, state]
                 life_bonus += bonus
@@ -289,18 +295,6 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
                 else:
                     print("Episode finished. Sum of shaped rewards: %.2f. Length: %d." % (rewards, length))
                 if 'distance' in info: print('Mario Distance Covered:', info['distance'])
-
-                """
-                print('++++++++++++++++++++++++++')
-                print(info['distance'])
-                print(type(info['distance']))
-                distance_list.append(info['distance'])
-                df = pd.DataFrame([], columns=["distance"])
-                df['distance'] = distance_list
-                #df.to_csv('./fine_tune_model/1-2/20w/distance' + str(task) + '.csv', index=False)
-                df.to_csv('./distance' + str(task) + '.csv', index=False)
-                print('++++++++++++++++++++++++++')
-                """
 
                 global normalizationParameter
                 print("normalizationParameter: {0}".format(normalizationParameter))
@@ -584,8 +578,8 @@ class A3C(object):
             global logDirCounter
             if fetched[-1] >= logDirCounter and self.task == 0:
                 # copy subdirectory example
-                fromDirectory = "./tmp/ac6_tiles_1_1"
-                toDirectory = "./model/1-1/scratch/tile/40/" + str(self.task) + "_" + str(logDirCounter) + ".bk/"
+                fromDirectory = "./tmp/ac4_tiles_1_1"
+                toDirectory = "./model/1-1/scratch/tile/ac4/30/" + str(self.task) + "_" + str(logDirCounter) + ".bk/"
                 logDirCounter = logDirCounter + 100000
 
                 copy_tree(fromDirectory, toDirectory)

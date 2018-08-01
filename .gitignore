@@ -1,6 +1,6 @@
-tmp/*
-model/*
-distance/*
+tmp/
+model/
+distance/
 *.pyc
-curiosity/*
+curiosity/
 

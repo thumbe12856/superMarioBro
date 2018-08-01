@@ -111,7 +111,7 @@ def create_mario(env_id, client_id, envWrap=True, record=False, outdir=None,
         env = gym.wrappers.Monitor(env, outdir, force=True)
 
     if envWrap:
-        frame_skip = acRepeat if acRepeat>0 else 6
+        frame_skip = acRepeat if acRepeat>0 else 4
         fshape = (42, 42)
         env.seed(None)
         if noLifeReward:
