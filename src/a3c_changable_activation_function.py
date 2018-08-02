@@ -16,17 +16,17 @@ from constants import constants
 use_tf12_api = distutils.version.LooseVersion(tf.VERSION) >= distutils.version.LooseVersion('0.12.0')
 
 testingCounter = 0
-logDirCounter = 500000
+logDirCounter = 3000000
 nowDistance = 0
 nowMaxDistance = 0
 lastDistance = 0
 normalizationParameter = 30.0
 distance_list = []
-fixed_level = 0
+fixed_level = 2
 
 EPS_START = 0.9  # e-greedy threshold start value
-EPS_END = 0.05  # e-greedy threshold end value
-EPS_DECAY = 10000  # e-greedy threshold decay
+EPS_END = 0.1  # e-greedy threshold end value
+EPS_DECAY = 100000  # e-greedy threshold decay
 EPS_threshold = 1
 EPS_step = 0
 
@@ -258,19 +258,18 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
                 bonus = bonus + diff
                 
                 if(terminal):
-                    if(not (nowDistance < 3200)):
+                    if(not (nowDistance < 2500)):
                         bonus = 1
+                        nowMaxDistance = 800
                         """
                         if(len(rollout.bonuses) > 0):
                             bonus = -rollout.bonuses[-1]
-                    else:
-                        bonus = 1
                         """
-
-                if(nowDistance / 100 > nowMaxDistance / 100):
-                    nowMaxDistance = nowDistance
-                    bonus = bonus + 1
-                    rollout.bonuses = [b + 1 for b in rollout.bonuses]
+                else:
+                    if(nowDistance / 100 > nowMaxDistance / 100):
+                        nowMaxDistance = nowDistance
+                        bonus = bonus + 1
+                        rollout.bonuses = [b + 1 for b in rollout.bonuses]
 
                 curr_tuple += [bonus, state]
                 life_bonus += bonus
@@ -578,9 +577,9 @@ class A3C(object):
             global logDirCounter
             if fetched[-1] >= logDirCounter and self.task == 0:
                 # copy subdirectory example
-                fromDirectory = "./tmp/ac4_tiles_1_1"
-                toDirectory = "./model/1-1/scratch/tile/ac4/30/" + str(self.task) + "_" + str(logDirCounter) + ".bk/"
-                logDirCounter = logDirCounter + 100000
+                fromDirectory = "./tmp/ac4_tiles_1_3"
+                toDirectory = "./model/1-3/fine_tuned/tile/ac4/30/" + str(self.task) + "_" + str(logDirCounter) + ".bk/"
+                logDirCounter = logDirCounter + 200000
 
                 copy_tree(fromDirectory, toDirectory)
 
