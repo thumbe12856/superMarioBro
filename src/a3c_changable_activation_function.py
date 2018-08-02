@@ -23,6 +23,7 @@ lastDistance = 0
 normalizationParameter = 30.0
 distance_list = []
 fixed_level = 2
+l3swit = 10
 
 EPS_START = 0.9  # e-greedy threshold start value
 EPS_END = 0.2  # e-greedy threshold end value
@@ -273,6 +274,12 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
                         bonus = 1
                         """
 
+                global l3swit
+                if(nowDistance > 800 and l3swit > 0):
+                    rollout.bonuses = [b + 1000 for b in rollout.bonuses]
+                    bonus = bonus + 1000
+                    l3swit = l3swit - 1
+
                 curr_tuple += [bonus, state]
                 life_bonus += bonus
                 ep_bonus += bonus
@@ -510,7 +517,7 @@ class A3C(object):
         Take a rollout from the queue of the thread runner.
         """
         # get top rollout from queue (FIFO)
-        rollout = self.runner.queue.get(timeout=600.0)
+        rollout = self.runner.queue.get(timeout=1000.0)
         while not rollout.terminal:
             try:
                 # Now, get remaining *available* rollouts from queue and append them into
@@ -580,7 +587,7 @@ class A3C(object):
             if fetched[-1] >= logDirCounter and self.task == 0:
                 # copy subdirectory example
                 fromDirectory = "./tmp/ac4_fine_tuned_1_3"
-                toDirectory = "./model/1-3/ac1_fine_tuned_1_3/30/ac4/" + str(self.task) + "_" + str(logDirCounter) + ".bk/"
+                toDirectory = "./model/1-3/ac4_fine_tuned_1_3/30/" + str(self.task) + "_" + str(logDirCounter) + ".bk/"
                 logDirCounter = logDirCounter + 100000
 
                 copy_tree(fromDirectory, toDirectory)
