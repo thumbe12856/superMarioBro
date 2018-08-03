@@ -93,8 +93,8 @@ def create_mario(env_id, client_id, envWrap=True, record=False, outdir=None,
     if '-v' in env_id.lower():
         env_id = 'ppaquette/' + env_id
     else:
-        #env_id = 'ppaquette/SuperMarioBros-1-1-v0'  # shape: (224,256,3)=(h,w,c)
-        env_id = 'ppaquette/SuperMarioBros-1-3-Tiles-v0'
+        env_id = 'ppaquette/SuperMarioBros-1-1-v0'  # shape: (224,256,3)=(h,w,c)
+        #env_id = 'ppaquette/SuperMarioBros-1-3-Tiles-v0'
 
     # Mario workaround: Simultaneously launching multiple vizdoom processes makes program stuck,
     # so use the global lock in multi-threading/multi-processing
@@ -105,13 +105,13 @@ def create_mario(env_id, client_id, envWrap=True, record=False, outdir=None,
     modewrapper = wrappers.SetPlayingMode('algo')
     acwrapper = wrappers.ToDiscrete()
     env = modewrapper(acwrapper(env))
-    env = env_wrapper.MarioEnv(env, tilesEnv=True)
+    env = env_wrapper.MarioEnv(env, tilesEnv=False)
 
     if record and outdir is not None:
         env = gym.wrappers.Monitor(env, outdir, force=True)
 
     if envWrap:
-        frame_skip = acRepeat if acRepeat>0 else 4
+        frame_skip = acRepeat if acRepeat>0 else 6
         fshape = (42, 42)
         env.seed(None)
         if noLifeReward:
@@ -272,8 +272,8 @@ class DiagnosticsInfoI(vectorized.Filter):
         if 'distance' in info: to_log['distance'] = info['distance']  # mario
         if 'time' in info: to_log['time'] = info['time']  # mario
         if 'level' in info: to_log['level'] = info['level']  # mario
-        if 'world_number' in info: to_log['world_number '] = info['world_number ']  # mario
-        if 'world' in info: to_log['world '] = info['world ']  # mario
+        if 'test' in info: to_log['test'] = info['test']  # mario
+        if 'curr_y_position' in info: to_log['curr_y_position'] = info['curr_y_position']  # mario        
 
         if 'POSITION_X' in info:  # doom
             to_log['POSITION_X'] = info['POSITION_X']

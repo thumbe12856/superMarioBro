@@ -16,17 +16,16 @@ from constants import constants
 use_tf12_api = distutils.version.LooseVersion(tf.VERSION) >= distutils.version.LooseVersion('0.12.0')
 
 testingCounter = 0
-logDirCounter = 500000
+logDirCounter = 5000000
 nowDistance = 0
 nowMaxDistance = 0
 lastDistance = 0
-normalizationParameter = 30.0
+normalizationParameter = 40.0
 distance_list = []
 fixed_level = 2
-l3swit = 10
 
-EPS_START = 0.9  # e-greedy threshold start value
-EPS_END = 0.2  # e-greedy threshold end value
+EPS_START = 0.1  # e-greedy threshold start value
+EPS_END = 0.1  # e-greedy threshold end value
 EPS_DECAY = 100000  # e-greedy threshold decay
 EPS_threshold = 1
 EPS_step = 0
@@ -214,6 +213,7 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
             # run environment: get action_index from sampled one-hot 'action'
             stepAct = action.argmax()
             state, reward, terminal, info = env.step(stepAct)
+            #raw_input("")
             global nowDistance
             global lastDistance
             global nowMaxDistance
@@ -221,13 +221,7 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
             lastDistance = nowDistance
             nowDistance = info['distance']
 
-            # epsilon greedy iteration
-            if(nowDistance > nowMaxDistance):
-                nowMaxDistance = nowDistance
-                #EPS_step = EPS_step + 1
-            if(nowMaxDistance >= 800):
-                EPS_END = 0.05
-
+            
             if noReward:
                 reward = 0.
             """
@@ -265,21 +259,23 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
                 bonus = bonus + diff
                 
                 if(terminal):
-                    if(not (nowDistance < 3200)):
+                    if(not (nowDistance < 2400)):
                         bonus = 1
+
+                    else:
+                        _now = nowDistance / 100
+                        _max = nowMaxDistance / 100
+                        if(_now > _max):
+                            nowMaxDistance = nowDistance
+                            bonus = bonus + 1
+                            rollout.bonuses = [b + 1 for b in rollout.bonuses]
+                        
                         """
                         if(len(rollout.bonuses) > 0):
                             bonus = -rollout.bonuses[-1]
                     else:
                         bonus = 1
                         """
-
-                global l3swit
-                if(nowDistance > 800 and l3swit > 0):
-                    rollout.bonuses = [b + 1000 for b in rollout.bonuses]
-                    bonus = bonus + 1000
-                    l3swit = l3swit - 1
-
                 curr_tuple += [bonus, state]
                 life_bonus += bonus
                 ep_bonus += bonus
@@ -596,3 +592,4 @@ class A3C(object):
             self.summary_writer.add_summary(tf.Summary.FromString(fetched[0]), fetched[-1])
             self.summary_writer.flush()
         self.local_steps += 1
+

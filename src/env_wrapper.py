@@ -150,7 +150,6 @@ class MarioEnv(gym.Wrapper):
 
     def _step(self, action):
         obs, reward, done, info = self.env.step(action)
-        # print('info:', info)
         done = info['iteration'] > self.resetCount
         reward = float(reward)/self.maxDistance # note: we do not use this rewards at all.
         if self.tilesEnv:

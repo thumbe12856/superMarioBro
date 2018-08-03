@@ -17,6 +17,10 @@ def inference(args):
     # define environment
     env = create_env(args.env_id, client_id='0', remotes=None, envWrap=True,
                         acRepeat=1, record=args.record, outdir=args.outdir)
+    """
+    env = create_env(args.env_id, client_id=str(args.task), remotes=args.remotes, 
+            envWrap=args.envWrap, designHead=args.designHead, noLifeReward=args.noLifeReward)
+    """
     numaction = env.action_space.n
 
     with tf.device("/cpu:0"):

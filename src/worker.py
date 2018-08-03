@@ -7,8 +7,8 @@ import sys, signal
 import time
 import os
 #from a3c import A3C
-#from a3c_test_dis import A3C
-from a3c_changable_activation_function import A3C
+from a3c_test_dis import A3C
+#from a3c_changable_activation_function import A3C
 from envs import create_env
 from constants import constants
 import distutils.version
@@ -26,8 +26,10 @@ class FastSaver(tf.train.Saver):
         #super(FastSaver, self).save(sess, save_path, global_step)
 
 def run(args, server):
-    env = create_env(args.env_id, client_id=str(args.task), remotes=args.remotes, envWrap=args.envWrap, designHead=args.designHead,
-                        noLifeReward=args.noLifeReward)
+    #env = create_env(args.env_id, client_id=str(args.task), remotes=args.remotes, envWrap=args.envWrap, designHead=args.designHead,
+    #                    noLifeReward=args.noLifeReward)
+
+    env = create_env(args.env_id, client_id='0', remotes=None, envWrap=True, acRepeat=6, record=True, outdir="test/")
 
     # set one task to one cpu
     config = tf.ConfigProto(device_filters=["/job:ps", "/job:worker/task:{}/cpu:0".format(args.task)])
