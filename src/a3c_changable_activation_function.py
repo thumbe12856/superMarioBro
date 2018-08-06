@@ -16,17 +16,18 @@ from constants import constants
 use_tf12_api = distutils.version.LooseVersion(tf.VERSION) >= distutils.version.LooseVersion('0.12.0')
 
 testingCounter = 0
-logDirCounter = 3000000
+logDirCounter = 1000000
 nowDistance = 0
-nowMaxDistance = 0
+nowMaxDistance = 800
+nowMaxDistanceCounter = 0
 lastDistance = 0
-normalizationParameter = 30.0
+normalizationParameter = 40.0
 distance_list = []
 fixed_level = 2
 
 EPS_START = 0.9  # e-greedy threshold start value
 EPS_END = 0.1  # e-greedy threshold end value
-EPS_DECAY = 100000  # e-greedy threshold decay
+EPS_DECAY = 500000  # e-greedy threshold decay
 EPS_threshold = 1
 EPS_step = 0
 
@@ -216,6 +217,7 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
             global nowDistance
             global lastDistance
             global nowMaxDistance
+            global nowMaxDistanceCounter
 
             lastDistance = nowDistance
             nowDistance = info['distance']
@@ -258,17 +260,25 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
                 bonus = bonus + diff
                 
                 if(terminal):
-                    if(not (nowDistance < 2500)):
-                        bonus = 1
+                    # arrive the goal
+                    if(nowDistance > 2500):
+                        bonus = 0.00000001
                         nowMaxDistance = 800
+                        nowMaxDistanceCounter = 0
                         """
                         if(len(rollout.bonuses) > 0):
                             bonus = -rollout.bonuses[-1]
                         """
+                    else:
+                        if(EPS_threshold <= 0.2 and nowMaxDistanceCounter < 2):
+                            if(nowDistance / 100 <= nowMaxDistance / 100 - 2 and nowMaxDistance > 800):
+                                nowMaxDistance = nowMaxDistance - 100
+                                nowMaxDistanceCounter = nowMaxDistanceCounter + 1
                 else:
                     if(nowDistance / 100 > nowMaxDistance / 100):
                         nowMaxDistance = nowDistance
                         bonus = bonus + 1
+                        nowMaxDistanceCounter = 0
                         rollout.bonuses = [b + 1 for b in rollout.bonuses]
 
                 curr_tuple += [bonus, state]
@@ -578,8 +588,8 @@ class A3C(object):
             if fetched[-1] >= logDirCounter and self.task == 0:
                 # copy subdirectory example
                 fromDirectory = "./tmp/ac4_tiles_1_3"
-                toDirectory = "./model/1-3/fine_tuned/tile/ac4/30/" + str(self.task) + "_" + str(logDirCounter) + ".bk/"
-                logDirCounter = logDirCounter + 200000
+                toDirectory = "./model/1-3/fine_tuned/tile/ac4/40/" + str(self.task) + "_" + str(logDirCounter) + ".bk/"
+                logDirCounter = logDirCounter + 500000
 
                 copy_tree(fromDirectory, toDirectory)
 
