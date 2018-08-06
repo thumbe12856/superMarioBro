@@ -3,4 +3,4 @@ model/
 distance/
 *.pyc
 curiosity/
-
+test/

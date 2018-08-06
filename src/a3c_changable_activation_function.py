@@ -19,6 +19,7 @@ testingCounter = 0
 logDirCounter = 1000000
 nowDistance = 0
 nowMaxDistance = 800
+nowMaxDistanceCounter = 0
 lastDistance = 0
 normalizationParameter = 40.0
 distance_list = []
@@ -220,6 +221,7 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
             global nowDistance
             global lastDistance
             global nowMaxDistance
+            global nowMaxDistanceCounter
 
             lastDistance = nowDistance
             nowDistance = info['distance']
@@ -262,18 +264,26 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
                 bonus = bonus + diff
                 
                 if(terminal):
-                    if(nowDistance >= 2500):
-                        bonus = 0.0001
+                    # arrive the goal
+                    if(nowDistance > 2500):
+                        bonus = 0.00000001
                         nowMaxDistance = 800
+                        nowMaxDistanceCounter = 0
                         """
                         if(len(rollout.bonuses) > 0):
                             bonus = -rollout.bonuses[-1]
                         """
+                    else:
+                        if(EPS_threshold <= 0.2 and nowMaxDistanceCounter < 2):
+                            if(nowDistance / 100 <= nowMaxDistance / 100 - 2 and nowMaxDistance > 800):
+                                nowMaxDistance = nowMaxDistance - 100
+                                nowMaxDistanceCounter = nowMaxDistanceCounter + 1
                 else:
                     if(nowDistance / 100 > nowMaxDistance / 100):
                         nowMaxDistance = nowDistance
-                        bonus = bonus + 10
-                        rollout.bonuses = [b + 10 for b in rollout.bonuses]
+                        bonus = bonus + 1
+                        nowMaxDistanceCounter = 0
+                        rollout.bonuses = [b + 1 for b in rollout.bonuses]
 
                 curr_tuple += [bonus, state]
                 life_bonus += bonus
