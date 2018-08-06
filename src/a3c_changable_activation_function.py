@@ -16,17 +16,17 @@ from constants import constants
 use_tf12_api = distutils.version.LooseVersion(tf.VERSION) >= distutils.version.LooseVersion('0.12.0')
 
 testingCounter = 0
-logDirCounter = 5500000
+logDirCounter = 1000000
 nowDistance = 0
 nowMaxDistance = 800
 lastDistance = 0
-normalizationParameter = 30.0
+normalizationParameter = 40.0
 distance_list = []
 fixed_level = 2
 
 EPS_START = 0.9  # e-greedy threshold start value
 EPS_END = 0.1  # e-greedy threshold end value
-EPS_DECAY = 500000  # e-greedy threshold decay
+EPS_DECAY = 200000  # e-greedy threshold decay
 EPS_threshold = 1
 EPS_step = 0
 
@@ -582,7 +582,7 @@ class A3C(object):
             if fetched[-1] >= logDirCounter and self.task == 0:
                 # copy subdirectory example
                 fromDirectory = "./tmp/ac4_tiles_1_3"
-                toDirectory = "./model/1-3/fine_tuned/tile/ac4/30/" + str(self.task) + "_" + str(logDirCounter) + ".bk/"
+                toDirectory = "./model/1-3/fine_tuned/tile/ac4/40/" + str(self.task) + "_" + str(logDirCounter) + ".bk/"
                 logDirCounter = logDirCounter + 500000
 
                 copy_tree(fromDirectory, toDirectory)
