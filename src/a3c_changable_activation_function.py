@@ -57,7 +57,10 @@ def process_rollout(rollout, gamma, lambda_=1.0, clip=False):
     rewards_plus_v = np.asarray(rollout.rewards + [rollout.r])  # bootstrapping
     if rollout.unsup:
         #rewards_plus_v += np.asarray(rollout.bonuses + [0])
-        rewards_plus_v += np.asarray(rollout.bonuses + [-rollout.bonuses[-1]])
+        if(len(rollout.bonuses) > 0):
+            rewards_plus_v += np.asarray(rollout.bonuses + [-rollout.bonuses[-1]])
+        else:
+            rewards_plus_v += np.asarray(rollout.bonuses + [0])
     if clip:
         rewards_plus_v[:-1] = np.clip(rewards_plus_v[:-1], -constants['REWARD_CLIP'], constants['REWARD_CLIP'])
     batch_r = discount(rewards_plus_v, gamma)[:-1]  # value network target
@@ -214,6 +217,7 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
             # run environment: get action_index from sampled one-hot 'action'
             stepAct = action.argmax()
             state, reward, terminal, info = env.step(stepAct)
+            #raw_input("")
             global nowDistance
             global lastDistance
             global nowMaxDistance
@@ -518,7 +522,7 @@ class A3C(object):
         Take a rollout from the queue of the thread runner.
         """
         # get top rollout from queue (FIFO)
-        rollout = self.runner.queue.get(timeout=600.0)
+        rollout = self.runner.queue.get(timeout=1000.0)
         while not rollout.terminal:
             try:
                 # Now, get remaining *available* rollouts from queue and append them into
@@ -597,3 +601,4 @@ class A3C(object):
             self.summary_writer.add_summary(tf.Summary.FromString(fetched[0]), fetched[-1])
             self.summary_writer.flush()
         self.local_steps += 1
+

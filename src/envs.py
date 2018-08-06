@@ -272,8 +272,8 @@ class DiagnosticsInfoI(vectorized.Filter):
         if 'distance' in info: to_log['distance'] = info['distance']  # mario
         if 'time' in info: to_log['time'] = info['time']  # mario
         if 'level' in info: to_log['level'] = info['level']  # mario
-        if 'world_number' in info: to_log['world_number '] = info['world_number ']  # mario
-        if 'world' in info: to_log['world '] = info['world ']  # mario
+        if 'test' in info: to_log['test'] = info['test']  # mario
+        if 'curr_y_position' in info: to_log['curr_y_position'] = info['curr_y_position']  # mario        
 
         if 'POSITION_X' in info:  # doom
             to_log['POSITION_X'] = info['POSITION_X']
