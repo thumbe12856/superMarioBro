@@ -19,11 +19,14 @@ testingCounter = 0
 logDirCounter = 1000000
 nowDistance = 0
 nowMaxDistance = 800
+realMaxDistance = 0
 nowMaxDistanceCounter = 0
-lastDistance = 0
-normalizationParameter = 40.0
+lastDistance = -1
+normalizationParameter = 30.0
 distance_list = []
 fixed_level = 2
+minClip = -0.1
+maxClip = 0.6
 
 EPS_START = 0.9  # e-greedy threshold start value
 EPS_END = 0.1  # e-greedy threshold end value
@@ -218,14 +221,12 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
             stepAct = action.argmax()
             state, reward, terminal, info = env.step(stepAct)
             #raw_input("")
-            global nowDistance
-            global lastDistance
-            global nowMaxDistance
-            global nowMaxDistanceCounter
+            global nowDistance, lastDistance, nowMaxDistance, nowMaxDistanceCounter, normalizationParameter, realMaxDistance
 
             lastDistance = nowDistance
             nowDistance = info['distance']
-
+            if(nowDistance > realMaxDistance):
+                realMaxDistance = nowDistance
             
             if noReward:
                 reward = 0.
@@ -240,26 +241,19 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
                 bonus = predictor.pred_bonus(last_state, state, action)
                 
                 # bonus
-                global nowDistance
-                global lastDistance
-                global normalizationParameter
                 if(info['level'] != fixed_level):
-                    lastDistance = 0
+                    lastDistance = -1
+
+                if(lastDistance == -1 or lastDistance > nowDistance + normalizationParameter):
+                    lastDistance = nowDistance
 
                 diff = (nowDistance - lastDistance)
-                #diff = (nowDistance - lastDistance) / 40.0
-
-                """
-                if(nowDistance != 0 and lastDistance != 0):
-                    if(diff > normalizationParameter):
-                        normalizationParameter = diff
-                """
-                
-                #diff = diff / float(normalizationParameter)
                 diff = (2 / float(2 * normalizationParameter)) * (diff + normalizationParameter) - 1
                 
-                if(diff <= -0.1):
-                    diff = -0.1
+                if(diff < minClip):
+                    diff = minClip
+                elif(diff > maxClip):
+                    diff = maxClip
 
                 bonus = bonus + diff
                 
@@ -312,6 +306,7 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
                 global normalizationParameter
                 print("normalizationParameter: {0}".format(normalizationParameter))
                 print("nowMaxDistance: {0}".format(nowMaxDistance))
+                print("realMaxDistance: {0}".format(realMaxDistance))
                 print("EPS_threshold: {0}".format(EPS_threshold))
                 print("EPS_step: {0}".format(EPS_step))
                 print("")
@@ -592,7 +587,7 @@ class A3C(object):
             if fetched[-1] >= logDirCounter and self.task == 0:
                 # copy subdirectory example
                 fromDirectory = "./tmp/ac4_tiles_1_3"
-                toDirectory = "./model/1-3/fine_tuned/tile/ac4/40/" + str(self.task) + "_" + str(logDirCounter) + ".bk/"
+                toDirectory = "./model/1-3/fine_tuned/tile/ac4/30_maxclip_0.6/" + str(self.task) + "_" + str(logDirCounter) + ".bk/"
                 logDirCounter = logDirCounter + 500000
 
                 copy_tree(fromDirectory, toDirectory)
