@@ -15,31 +15,26 @@ import random
 from constants import constants
 use_tf12_api = distutils.version.LooseVersion(tf.VERSION) >= distutils.version.LooseVersion('0.12.0')
 
-timesDead = 0
-timesToGoalCounter = 0
-logDirCounter = 500000
+logDirCounter = 1000000
+
 nowDistance = 0
-nowMaxDistance = 0
-realMaxDistance = 0
+nowMaxDistance = 800
 nowMaxDistanceCounter = 0
+realMaxDistance = 0
 lastDistance = -1
 normalizationParameter = 30.0
-distance_list = []
-fixed_level = 1
-
-minClip = -0.1
-maxClip = 0.5
-
 nowY = 0
 lastY = 0
 isflying = False
 startFlyingIdx = -1
 minClip = -0.1
-flyingMaxClip = -0.1
+maxClip = 0.5
+flyingMaxClip = 0.1
 
+fixed_level = 2
 EPS_START = 0.9  # e-greedy threshold start value
-EPS_END = 0.05  # e-greedy threshold end value
-EPS_DECAY = 100000  # e-greedy threshold decay
+EPS_END = 0.1  # e-greedy threshold end value
+EPS_DECAY = 500000  # e-greedy threshold decay
 EPS_threshold = 1
 EPS_step = 0
 
@@ -68,19 +63,11 @@ def process_rollout(rollout, gamma, lambda_=1.0, clip=False):
     # V_t <-> r_t + gamma*r_{t+1} + ... + gamma^n*r_{t+n} + gamma^{n+1}*V_{n+1}
     rewards_plus_v = np.asarray(rollout.rewards + [rollout.r])  # bootstrapping
     if rollout.unsup:
-        """
-        global timesToGoalCounter
-        if(timesToGoalCounter > 0):
-            rewards_plus_v += np.asarray(rollout.bonuses + [0])
-        else:
-        """
-        """
+        #rewards_plus_v += np.asarray(rollout.bonuses + [0])
         if(len(rollout.bonuses) > 0):
             rewards_plus_v += np.asarray(rollout.bonuses + [-rollout.bonuses[-1]])
         else:
             rewards_plus_v += np.asarray(rollout.bonuses + [0])
-        """
-        rewards_plus_v += np.asarray(rollout.bonuses + [0])        
     if clip:
         rewards_plus_v[:-1] = np.clip(rewards_plus_v[:-1], -constants['REWARD_CLIP'], constants['REWARD_CLIP'])
     batch_r = discount(rewards_plus_v, gamma)[:-1]  # value network target
@@ -219,18 +206,9 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
             #action, value_, all_action, features = fetched[0], fetched[1], fetched[2], fetched[3:]
             
 
-
             # epsilon greedy
             global EPS_step, EPS_threshold, EPS_END, EPS_START
             EPS_step = policy.global_step.eval()
-
-            """
-            if(value_[0] <= 0.5):
-                EPS_threshold = 0.2
-            else:
-                #EPS_threshold = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * EPS_step / EPS_DECAY)
-                EPS_threshold = 0
-            """
             EPS_threshold = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * EPS_step / EPS_DECAY)
             sample = random.random()
 
@@ -245,28 +223,38 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
             # run environment: get action_index from sampled one-hot 'action'
             stepAct = action.argmax()
             state, reward, terminal, info = env.step(stepAct)
-            #raw_input("")
-            global nowDistance, lastDistance, nowMaxDistance, nowMaxDistanceCounter, normalizationParameter, realMaxDistance, timesToGoalCounter, timesDead
-            global nowY, lastY, isflying, startFlyingIdx, flyingMaxClip
+            global nowDistance, lastDistance, nowMaxDistance, nowMaxDistanceCounter, realMaxDistance, normalizationParameter
+            global nowY, lastY, isflying, startFlyingIdx
+
+            # x axis position
+            lastDistance = nowDistance
+            nowDistance = info['distance']
+            if(nowDistance > realMaxDistance):
+                realMaxDistance = nowDistance
+            
+            # y axis position
             lastY = nowY
             nowY = info['curr_y_position']
 
             if(lastY != nowY and not isflying):
                 isflying = True
-                startFlyingIdx = length
+                startFlyingIdx = len(rollout.bonuses)
             elif(lastY == nowY):
+                """
+                # if the agent "was" flying, and landing now, then give it huge reward!
+                if(isflying):
+                    if(startFlyingIdx < len(rollout.bonuses)):
+                        tempPreRollout = rollout.bonuses[:startFlyingIdx]
+                        tempNextRollout = [b + 1 for b in rollout.bonuses[startFlyingIdx:]]
+                        rollout.bonuses = tempPreRollout + tempNextRollout
+                        #b = a[:5]
+                        #b += [i + 1 if i >= 5 else 0 for i in a[5:]]
+                    else:
+                        tempNextRollout = [b + 1 for b in rollout.bonuses]
+                """                
+
                 startFlyingIdx = -1
                 isflying = False
-
-            """
-            print(reward)
-            print(value_[0])    
-            raw_input('')
-            """
-            lastDistance = nowDistance
-            nowDistance = info['distance']
-            if(nowDistance > realMaxDistance):
-                realMaxDistance = nowDistance
             
             if noReward:
                 reward = 0.
@@ -281,6 +269,8 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
                 bonus = predictor.pred_bonus(last_state, state, action)
                 
                 # bonus
+                global fixed_level, minClip, flyingMaxClip
+
                 if(info['level'] != fixed_level):
                     lastDistance = -1
 
@@ -290,64 +280,67 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
                 diff = (nowDistance - lastDistance)
                 diff = (2 / float(2 * normalizationParameter)) * (diff + normalizationParameter) - 1
                 
-                if(diff < minClip):
+                if(diff <= minClip):
                     diff = minClip
-                elif(diff > maxClip):
+                elif(diff >= maxClip):
                     diff = maxClip
 
                 bonus = bonus + diff
                 
-
                 if(terminal):
-                    print("value_[0]: " + str(value_[0]))
-
-                    global distance_list
-                    dis_dir = './model/1-2/ac4/30_maxclip_0.5/' + str(task) + '.csv'
-                    distance_list.append(info["distance"])
-
-                    df = pd.DataFrame([], columns=["distance"])
-                    df["distance"] = distance_list
-                    df.to_csv(dis_dir, index=False)
-                    
-                    print("distance mean:")
-                    print('++++++++++++++++++++++++++')
-                    print(df["distance"].mean())
-                    print('++++++++++++++++++++++++++')
-
                     # arrive the goal
-                    if(nowDistance > 3200):
-                        bonus = 1
-                        nowMaxDistance = 0
+                    if(nowDistance > 2500):
+                        bonus = 0.00000001
+                        nowMaxDistance = 800
                         nowMaxDistanceCounter = 0
-                        if(length > 1):
-                            timesToGoalCounter = timesToGoalCounter + 1
                     else:
-                        timesDead = timesDead + 1
-                        if(EPS_threshold <= 0.2 and nowMaxDistance > 0):
-                            if(nowMaxDistanceCounter < 2):
-                                if(nowDistance / 100 <= nowMaxDistance / 100 - 2 and nowMaxDistance > 100):
-                                    nowMaxDistance = nowMaxDistance - 100
-                                    nowMaxDistanceCounter = nowMaxDistanceCounter + 1
+                        if(EPS_threshold <= 0.2 and nowMaxDistanceCounter < 2):
+                            if(nowDistance / 100 <= nowMaxDistance / 100 - 2 and nowMaxDistance > 800):
+                                nowMaxDistance = nowMaxDistance - 100
+                                nowMaxDistanceCounter = nowMaxDistanceCounter + 1
 
-                        
-                        if(isflying and lastY > 200):
-                            bonus = bonus if bonus <= flyingMaxClip else flyingMaxClip
-                            if(startFlyingIdx < len(rollout.bonuses)):
-                                tempPreRollout = rollout.bonuses[:startFlyingIdx]
-                                tempNextRollout = [b if b < flyingMaxClip else flyingMaxClip for b in rollout.bonuses[startFlyingIdx:]]
-                                rollout.bonuses = tempPreRollout + tempNextRollout
-                            else:
-                                rollout.bonuses = [b if b < flyingMaxClip else flyingMaxClip for b in rollout.bonuses]
+                    # if the agent "was" flying, and dead now, then clip its reward.
+                    #if(isflying):
+                    # if the agent "was" flying, and dead at gap not killed enemy now, then clip its reward.
+                    if(isflying and lastY > 200):
+                        print("flying dead, idx:{0}".format(startFlyingIdx))
+                        if(startFlyingIdx < len(rollout.bonuses)):
+                            # state, action, reward, value, terminal, features
+                            rollout.states = rollout.states[:startFlyingIdx]
+                            rollout.actions = rollout.actions[:startFlyingIdx]
+                            rollout.rewards = rollout.rewards[:startFlyingIdx]
+                            rollout.values = rollout.values[:startFlyingIdx]
+                            #rollout.terminal = terminal
+                            rollout.features = rollout.features[:startFlyingIdx]
+                            rollout.bonuses = rollout.bonuses[:startFlyingIdx]
+                            #rollout.end_state = 
 
-                            startFlyingIdx = -1
-                            isflying = False                        
-
+                            #tempPreRollout = rollout.bonuses[:startFlyingIdx]
+                            #tempNextRollout = [b if b <= flyingMaxClip else flyingMaxClip for b in rollout.bonuses[startFlyingIdx:]]
+                            #rollout.bonuses = tempPreRollout + tempNextRollout
+                        else:
+                            rollout.states = []
+                            rollout.actions = []
+                            rollout.rewards = []
+                            rollout.values = []
+                            rollout.features = []
+                            rollout.bonuses = []
+                            #rollout.bonuses = [b if b <= flyingMaxClip else flyingMaxClip for b in rollout.bonuses]
+                        bonus = bonus if bonus <= flyingMaxClip else flyingMaxClip
                 else:
+                    # if the agent break the max distance record, then give it huge reward!
                     if(nowDistance / 100 > nowMaxDistance / 100):
+                        #print("nowDistance / 100 > nowMaxDistance / 100")
                         nowMaxDistance = nowDistance
                         bonus = bonus + 1
                         nowMaxDistanceCounter = 0
                         rollout.bonuses = [b + 1 for b in rollout.bonuses]
+
+                """
+                # if the agent is flying, then clip the reward to maxima at 0.1    
+                if(isflying):
+                    bonus = bonus if bonus <= flyingMaxClip else flyingMaxClip
+                """
 
                 curr_tuple += [bonus, state]
                 life_bonus += bonus
@@ -355,6 +348,11 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
 
             # collect the experience
             rollout.add(*curr_tuple)
+            """
+            print(startFlyingIdx)
+            print(rollout.bonuses)
+            raw_input("")
+            """
             rewards += reward
             length += 1
             values += value_[0]
@@ -373,12 +371,9 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
                     print("Episode finished. Sum of shaped rewards: %.2f. Length: %d." % (rewards, length))
                 if 'distance' in info: print('Mario Distance Covered:', info['distance'])
 
-                global normalizationParameter
                 print("normalizationParameter: {0}".format(normalizationParameter))
                 print("nowMaxDistance: {0}".format(nowMaxDistance))
                 print("realMaxDistance: {0}".format(realMaxDistance))
-                print("timesToGoalCounter: {0}".format(timesToGoalCounter))
-                print("timesDead: {0}".format(timesDead))
                 print("EPS_threshold: {0}".format(EPS_threshold))
                 print("EPS_step: {0}".format(EPS_step))
                 print("")
@@ -650,7 +645,7 @@ class A3C(object):
         fetched = sess.run(fetches, feed_dict=feed_dict)
 
         # testing
-        #fetched = sess.run([self.global_step],feed_dict=feed_dict)
+        #fetched = sess.run([self.global_step],feed_dict=feed_dict )
 
         if batch.terminal:
             print("Global Step Counter: %d"%fetched[-1])
@@ -658,9 +653,9 @@ class A3C(object):
             global logDirCounter
             if fetched[-1] >= logDirCounter and self.task == 0:
                 # copy subdirectory example
-                fromDirectory = "./tmp/ac4_1_2"
-                toDirectory = "./model/1-2/ac4/30_maxclip_0.5/" + str(self.task) + "_" + str(logDirCounter) + ".bk/"
-                logDirCounter = logDirCounter + 100000
+                fromDirectory = "./tmp/ac4_tiles_1_3"
+                toDirectory = "./model/1-3/fine_tuned/tile/30/not_update_flying_to_dead/" + str(self.task) + "_" + str(logDirCounter) + ".bk/"
+                logDirCounter = logDirCounter + 500000
 
                 copy_tree(fromDirectory, toDirectory)
 

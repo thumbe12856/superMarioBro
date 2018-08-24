@@ -14,16 +14,21 @@ use_tf12_api = distutils.version.LooseVersion(tf.VERSION) >= distutils.version.L
 
 nowDistance = 0
 lastDistance = 0
+
+minClip = -0.1
+maxClip = 0.5
+
 # distance_list =[]
 # distance_list_from_z =[]
 # distance_list_from_f =[]
 distance_list_start_from = []
 distance_list = []
 testing_counter = 0
-normalization_constant = 40.0
+normalization_constant = 30.0
 spawn_from_switch = True
 spawn_from = 0
-dis_dir = 'test.csv'
+spawn_from_saved_point_distance = 1000
+#dis_dir = 'test.csv'
 
 def discount(x, gamma):
     """
@@ -195,11 +200,11 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
             lastDistance = nowDistance
             nowDistance = info['distance']
 
-            global spawn_from
+            global spawn_from, spawn_from_saved_point_distance
             global spawn_from_switch
             if(spawn_from_switch):
                 spawn_from_switch = False
-                if(info['distance'] > 1300):
+                if(info['distance'] > spawn_from_saved_point_distance):
                     spawn_from = 1
                 else:
                     spawn_from = 0
@@ -215,22 +220,18 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
                 bonus = predictor.pred_bonus(last_state, state, action)
                 
                 # testing bonus
-                global nowDistance
-                global lastDistance
+                global nowDistance, lastDistance
+                global minClip, maxClip
                 diff = (nowDistance - lastDistance) / normalization_constant
                 
                 
                 #diff = diff / float(normalizationParameter)
                 diff = (2 / float(2 * normalization_constant)) * (diff + normalization_constant) - 1
                 
-                """
-                if(diff < 0):
-                    diff = -0.10 if diff < -0.10 else diff
-                """
-                if(diff <= -0.1):
-                    diff = -0.1
-                else:
-                    diff = diff + 0.1
+                if(diff < minClip):
+                    diff = minClip
+                elif(diff > maxClip):
+                    diff = maxClip
                 bonus = bonus + diff
                 
                 if(terminal):
@@ -264,9 +265,9 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
                 global spawn_from
                 global spawn_from_switch
                 spawn_from_switch = True
-                #dis_dir = 'distance/scratch/1-1/100w/40/terminalMinus1/distance_bonus40_' + str(task) + '.csv'
+                dis_dir = 'distance/fine_tuned/1-3/30/225w/30_maxclip_0.5_pretrain_invincible_EPS0.2__' + str(task) + '.csv'
                 
-                if length > 10: # because when agent reach the goal, it will wait it to the time limit.   
+                if length > 1: # because when agent reach the goal, it will wait it to the time limit.   
                     distance_list_start_from.append(spawn_from)
                     distance_list.append(info['distance'])
 
@@ -282,7 +283,7 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
 
 
                 global testing_counter
-                if(testing_counter < 10000):
+                if(testing_counter < 100000):
                     testing_counter = testing_counter + 1
                 """
                 else:
