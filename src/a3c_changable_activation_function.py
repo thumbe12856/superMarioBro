@@ -11,10 +11,12 @@ import pandas as pd
 from distutils.dir_util import copy_tree
 import math
 import random
+import operator
 
 from constants import constants
 use_tf12_api = distutils.version.LooseVersion(tf.VERSION) >= distutils.version.LooseVersion('0.12.0')
 
+goalDistance = 2500
 timesDead = 0
 timesToGoalCounter = 0
 logDirCounter = 500000
@@ -25,20 +27,23 @@ nowMaxDistanceCounter = 0
 lastDistance = -1
 normalizationParameter = 30.0
 distance_list = []
-fixed_level = 1
+frequentDeadDistance = {}
+
+fixed_level = 2
+LEVEL = "1-3"
 
 minClip = -0.1
-maxClip = 0.5
+maxClip = 0.8
 
 nowY = 0
 lastY = 0
+last2Y = 0
 isflying = False
 startFlyingIdx = -1
-minClip = -0.1
-flyingMaxClip = -0.1
+flyingMaxClip = 0
 
 EPS_START = 0.9  # e-greedy threshold start value
-EPS_END = 0.05  # e-greedy threshold end value
+EPS_END = 0.  # e-greedy threshold end value
 EPS_DECAY = 100000  # e-greedy threshold decay
 EPS_threshold = 1
 EPS_step = 0
@@ -216,22 +221,19 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
             # run policy
             fetched = policy.act(last_state, *last_features)
             action, value_, features = fetched[0], fetched[1], fetched[2:]
-            #action, value_, all_action, features = fetched[0], fetched[1], fetched[2], fetched[3:]
-            
-
+            #action, value_, all_action, features = fetched[0], fetched[1], fetched[2], fetched[3:]          
 
             # epsilon greedy
             global EPS_step, EPS_threshold, EPS_END, EPS_START
             EPS_step = policy.global_step.eval()
 
-            """
-            if(value_[0] <= 0.5):
+            if(value_[0] <= 0.8):
                 EPS_threshold = 0.2
             else:
                 #EPS_threshold = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * EPS_step / EPS_DECAY)
                 EPS_threshold = 0
-            """
-            EPS_threshold = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * EPS_step / EPS_DECAY)
+            #EPS_threshold = 0
+            #EPS_threshold = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * EPS_step / EPS_DECAY)
             sample = random.random()
 
             if(sample < EPS_threshold):
@@ -246,17 +248,22 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
             stepAct = action.argmax()
             state, reward, terminal, info = env.step(stepAct)
             #raw_input("")
-            global nowDistance, lastDistance, nowMaxDistance, nowMaxDistanceCounter, normalizationParameter, realMaxDistance, timesToGoalCounter, timesDead
-            global nowY, lastY, isflying, startFlyingIdx, flyingMaxClip
+            global nowDistance, lastDistance, nowMaxDistance, nowMaxDistanceCounter, normalizationParameter, realMaxDistance, timesToGoalCounter, timesDead, goalDistance
+            global nowY, last2Y, lastY, isflying, startFlyingIdx, flyingMaxClip
+            last2Y = lastY
             lastY = nowY
             nowY = info['curr_y_position']
 
             if(lastY != nowY and not isflying):
                 isflying = True
                 startFlyingIdx = length
+            #elif(lastY == nowY or (last2Y < lastY and nowY < lastY)):
             elif(lastY == nowY):
                 startFlyingIdx = -1
                 isflying = False
+            elif(last2Y < lastY and nowY < lastY and lastY - nowY <= 100):
+                isflying = True
+                startFlyingIdx = length
 
             """
             print(reward)
@@ -281,8 +288,10 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
                 bonus = predictor.pred_bonus(last_state, state, action)
                 
                 # bonus
+                """
                 if(info['level'] != fixed_level):
                     lastDistance = -1
+                """
 
                 if(lastDistance == -1 or lastDistance > nowDistance + normalizationParameter):
                     lastDistance = nowDistance
@@ -296,58 +305,72 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
                     diff = maxClip
 
                 bonus = bonus + diff
-                
 
                 if(terminal):
                     print("value_[0]: " + str(value_[0]))
 
-                    global distance_list
-                    dis_dir = './model/1-2/ac4/30_maxclip_0.5/' + str(task) + '.csv'
-                    distance_list.append(info["distance"])
+                    # because the agent will keep being terminal at goal until time end.
+                    if(length > 1):
+                        global distance_list, LEVEL
+                        dis_dir = "./model/" + LEVEL + "/fine_tuned/ac4/30/30_frequent_maxclip0.8/" + str(task) + ".csv"
+                        distance_list.append(info["distance"])
 
-                    df = pd.DataFrame([], columns=["distance"])
-                    df["distance"] = distance_list
-                    df.to_csv(dis_dir, index=False)
-                    
-                    print("distance mean:")
-                    print('++++++++++++++++++++++++++')
-                    print(df["distance"].mean())
-                    print('++++++++++++++++++++++++++')
+                        df = pd.DataFrame([], columns=["distance"])
+                        df["distance"] = distance_list
+                        df.to_csv(dis_dir, index=False)
+                        
+                        print("distance mean:")
+                        print('++++++++++++++++++++++++++')
+                        print(df["distance"].mean())
+                        print('++++++++++++++++++++++++++')
 
+                        frequentDeadDistance.setdefault(nowDistance / 100 * 100, 0)
+                        frequentDeadDistance[nowDistance / 100 * 100] = frequentDeadDistance[nowDistance / 100 * 100] + 1
+                        
                     # arrive the goal
-                    if(nowDistance > 3200):
+                    if(nowDistance > goalDistance):
                         bonus = 1
-                        nowMaxDistance = 0
+                        #nowMaxDistance = goalDistance / 3
+                        nowMaxDistance = max(frequentDeadDistance.iteritems(), key=operator.itemgetter(1))[0]
                         nowMaxDistanceCounter = 0
                         if(length > 1):
                             timesToGoalCounter = timesToGoalCounter + 1
                     else:
                         timesDead = timesDead + 1
-                        if(EPS_threshold <= 0.2 and nowMaxDistance > 0):
+                        #if(EPS_threshold <= 0.2 and nowMaxDistance > 0):
+                        if(EPS_step >= 200000 and nowMaxDistance > 0):
                             if(nowMaxDistanceCounter < 2):
                                 if(nowDistance / 100 <= nowMaxDistance / 100 - 2 and nowMaxDistance > 100):
                                     nowMaxDistance = nowMaxDistance - 100
                                     nowMaxDistanceCounter = nowMaxDistanceCounter + 1
 
-                        
-                        if(isflying and lastY > 200):
+                        if(EPS_step >= 100000 and isflying and lastY > 200):
                             bonus = bonus if bonus <= flyingMaxClip else flyingMaxClip
+
+                            # because rollout max length is 20, so there may be updated before detect is terminal.
                             if(startFlyingIdx < len(rollout.bonuses)):
                                 tempPreRollout = rollout.bonuses[:startFlyingIdx]
                                 tempNextRollout = [b if b < flyingMaxClip else flyingMaxClip for b in rollout.bonuses[startFlyingIdx:]]
                                 rollout.bonuses = tempPreRollout + tempNextRollout
                             else:
-                                rollout.bonuses = [b if b < flyingMaxClip else flyingMaxClip for b in rollout.bonuses]
-
+                                '''
+                                    i.e. length = 33, startFlyingIdx = 24, len(rollout.bonuses) = 12
+                                    then update rollout.bonuses[8:], because now bonus will be added at rollout.add(*curr_tuple)
+                                '''
+                                tempPreRollout = rollout.bonuses[: - (length - 1 - startFlyingIdx)]
+                                tempNextRollout = [b if b < flyingMaxClip else flyingMaxClip for b in rollout.bonuses[ - (length - 1 - startFlyingIdx):]]
+                                rollout.bonuses = tempPreRollout + tempNextRollout
                             startFlyingIdx = -1
-                            isflying = False                        
+                            isflying = False
+                            print(rollout.bonuses)
 
                 else:
                     if(nowDistance / 100 > nowMaxDistance / 100):
                         nowMaxDistance = nowDistance
-                        bonus = bonus + 1
-                        nowMaxDistanceCounter = 0
-                        rollout.bonuses = [b + 1 for b in rollout.bonuses]
+                        if(EPS_step >= 200000 and nowMaxDistance > 0):
+                            bonus = bonus + 1
+                            nowMaxDistanceCounter = 0
+                            rollout.bonuses = [b + 1 for b in rollout.bonuses]
 
                 curr_tuple += [bonus, state]
                 life_bonus += bonus
@@ -655,11 +678,11 @@ class A3C(object):
         if batch.terminal:
             print("Global Step Counter: %d"%fetched[-1])
 
-            global logDirCounter
+            global logDirCounter, LEVEL
             if fetched[-1] >= logDirCounter and self.task == 0:
                 # copy subdirectory example
-                fromDirectory = "./tmp/ac4_1_2"
-                toDirectory = "./model/1-2/ac4/30_maxclip_0.5/" + str(self.task) + "_" + str(logDirCounter) + ".bk/"
+                fromDirectory = "./tmp/ac4_" + LEVEL
+                toDirectory = "./model/" + LEVEL + "/fine_tuned/ac4/30/30_frequent_maxclip0.8/" + str(self.task) + "_" + str(logDirCounter) + ".bk/"
                 logDirCounter = logDirCounter + 100000
 
                 copy_tree(fromDirectory, toDirectory)

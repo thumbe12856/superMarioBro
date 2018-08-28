@@ -93,7 +93,7 @@ def create_mario(env_id, client_id, envWrap=True, record=False, outdir=None,
     if '-v' in env_id.lower():
         env_id = 'ppaquette/' + env_id
     else:
-        env_id = 'ppaquette/SuperMarioBros-1-2-v0'  # shape: (224,256,3)=(h,w,c)
+        env_id = 'ppaquette/SuperMarioBros-1-3-v0'  # shape: (224,256,3)=(h,w,c)
         #env_id = 'ppaquette/SuperMarioBros-1-3-Tiles-v0'
 
     # Mario workaround: Simultaneously launching multiple vizdoom processes makes program stuck,
