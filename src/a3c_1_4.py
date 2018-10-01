@@ -7,28 +7,40 @@ import six.moves.queue as queue
 import scipy.signal
 import threading
 import distutils.version
-from constants import constants
 import pandas as pd
 from distutils.dir_util import copy_tree
+import math
+import random
+
+from constants import constants
 use_tf12_api = distutils.version.LooseVersion(tf.VERSION) >= distutils.version.LooseVersion('0.12.0')
 
+timesToGoalCounter = 0
+logDirCounter = 2000000
 nowDistance = 0
-lastDistance = 0
+nowMaxDistance = 1300
+realMaxDistance = 0
+nowMaxDistanceCounter = 0
+lastDistance = -1
+normalizationParameter = 30.0
+distance_list = []
+fixed_level = 3
 
 minClip = -0.1
 maxClip = 0.5
 
-# distance_list =[]
-# distance_list_from_z =[]
-# distance_list_from_f =[]
-distance_list_start_from = []
-distance_list = []
-testing_counter = 0
-normalization_constant = 30.0
-spawn_from_switch = True
-spawn_from = 0
-spawn_from_saved_point_distance = 1000
-#dis_dir = 'test.csv'
+nowY = 0
+lastY = 0
+isflying = False
+startFlyingIdx = -1
+minClip = -0.1
+flyingMaxClip = 0
+
+EPS_START = 0.9  # e-greedy threshold start value
+EPS_END = 0.05  # e-greedy threshold end value
+EPS_DECAY = 500000  # e-greedy threshold decay
+EPS_threshold = 1
+EPS_step = 0
 
 def discount(x, gamma):
     """
@@ -55,7 +67,16 @@ def process_rollout(rollout, gamma, lambda_=1.0, clip=False):
     # V_t <-> r_t + gamma*r_{t+1} + ... + gamma^n*r_{t+n} + gamma^{n+1}*V_{n+1}
     rewards_plus_v = np.asarray(rollout.rewards + [rollout.r])  # bootstrapping
     if rollout.unsup:
-        rewards_plus_v += np.asarray(rollout.bonuses + [0])
+        global timesToGoalCounter
+        """
+        if(timesToGoalCounter > 0):
+            rewards_plus_v += np.asarray(rollout.bonuses + [0])
+        else:
+        """
+        if(len(rollout.bonuses) > 0):
+            rewards_plus_v += np.asarray(rollout.bonuses + [-rollout.bonuses[-1]])
+        else:
+            rewards_plus_v += np.asarray(rollout.bonuses + [0])        
     if clip:
         rewards_plus_v[:-1] = np.clip(rewards_plus_v[:-1], -constants['REWARD_CLIP'], constants['REWARD_CLIP'])
     batch_r = discount(rewards_plus_v, gamma)[:-1]  # value network target
@@ -186,56 +207,122 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
     while True:
         terminal_end = False
         rollout = PartialRollout(predictor is not None)
-        
+
         for _ in range(num_local_steps):
             # run policy
             fetched = policy.act(last_state, *last_features)
             action, value_, features = fetched[0], fetched[1], fetched[2:]
+            #action, value_, all_action, features = fetched[0], fetched[1], fetched[2], fetched[3:]
+            
+
+
+            # epsilon greedy
+            global EPS_step, EPS_threshold, EPS_END, EPS_START
+            EPS_step = policy.global_step.eval()
+            EPS_threshold = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * EPS_step / EPS_DECAY)
+            #EPS_threshold = 0
+            sample = random.random()
+
+            if(sample < EPS_threshold):
+                randomAction = np.zeros(action.shape[0])
+                randomAction[random.randint(0, action.shape[0] - 1)] = 1
+                #second_largest_index = np.argsort(all_action[0])[-2]
+                #randomAction[second_largest_index] = 1
+                action = randomAction
+            
 
             # run environment: get action_index from sampled one-hot 'action'
             stepAct = action.argmax()
             state, reward, terminal, info = env.step(stepAct)
-            global nowDistance
-            global lastDistance
+            #raw_input("")
+            global nowDistance, lastDistance, nowMaxDistance, nowMaxDistanceCounter, normalizationParameter, realMaxDistance, timesToGoalCounter
+            global nowY, lastY, isflying, startFlyingIdx, flyingMaxClip
+            lastY = nowY
+            nowY = info['curr_y_position']
+
+            if(lastY != nowY and not isflying):
+                isflying = True
+                startFlyingIdx = length
+            elif(lastY == nowY):
+                startFlyingIdx = -1
+                isflying = False
+            
+            """
+            print(reward)
+            print(value_[0])    
+            raw_input('')
+            """
             lastDistance = nowDistance
             nowDistance = info['distance']
-
-            global spawn_from, spawn_from_saved_point_distance
-            global spawn_from_switch
-            if(spawn_from_switch):
-                spawn_from_switch = False
-                if(info['distance'] > spawn_from_saved_point_distance):
-                    spawn_from = 1
-                else:
-                    spawn_from = 0
-
+            if(nowDistance > realMaxDistance):
+                realMaxDistance = nowDistance
+            
             if noReward:
                 reward = 0.
+            """
             if render:
                 env.render()
+            """
 
             #rollout.add(self, state, action, reward, value, terminal, features, bonus=None, end_state=None)
             curr_tuple = [last_state, action, reward, value_, terminal, last_features]
             if predictor is not None:
                 bonus = predictor.pred_bonus(last_state, state, action)
                 
-                # testing bonus
-                global nowDistance, lastDistance
-                global minClip, maxClip
-                diff = (nowDistance - lastDistance) / normalization_constant
-                
-                
-                #diff = diff / float(normalizationParameter)
-                diff = (2 / float(2 * normalization_constant)) * (diff + normalization_constant) - 1
+                # bonus
+                if(info['level'] != fixed_level):
+                    lastDistance = -1
+
+                if(lastDistance == -1 or lastDistance > nowDistance + normalizationParameter):
+                    lastDistance = nowDistance
+
+                diff = (nowDistance - lastDistance)
+                diff = (2 / float(2 * normalizationParameter)) * (diff + normalizationParameter) - 1
                 
                 if(diff < minClip):
                     diff = minClip
                 elif(diff > maxClip):
                     diff = maxClip
+
                 bonus = bonus + diff
                 
+
                 if(terminal):
-                    bonus = -0.1
+                    # arrive the goal
+                    if(nowDistance > 2400):
+                        bonus = 1
+                        nowMaxDistance = 1300
+                        nowMaxDistanceCounter = 0
+                        if(length > 1):
+                            timesToGoalCounter = timesToGoalCounter + 1
+                    else:
+                        if(EPS_threshold <= 0.2):
+                            if(nowMaxDistanceCounter < 2):
+                                if(nowDistance / 100 <= nowMaxDistance / 100 - 2 and nowMaxDistance > 1300):
+                                #if(nowDistance / 100 <= nowMaxDistance / 100 - 2):
+                                    nowMaxDistance = nowMaxDistance - 100
+                                    nowMaxDistanceCounter = nowMaxDistanceCounter + 1
+
+                        if(isflying and timesToGoalCounter > 0):
+                            bonus = bonus if bonus <= flyingMaxClip else flyingMaxClip
+                            if(startFlyingIdx < len(rollout.bonuses)):
+                                tempPreRollout = rollout.bonuses[:startFlyingIdx]
+                                tempNextRollout = [b if b < flyingMaxClip else flyingMaxClip for b in rollout.bonuses[startFlyingIdx:]]
+                                rollout.bonuses = tempPreRollout + tempNextRollout
+                                #b = a[:5]
+                                #b += [i + 1 if i >= 5 else 0 for i in a[5:]]
+                            else:
+                                rollout.bonuses = [b if b < flyingMaxClip else flyingMaxClip for b in rollout.bonuses]
+
+                            startFlyingIdx = -1
+                            isflying = False
+
+                else:
+                    if(nowDistance / 100 > nowMaxDistance / 100):
+                        nowMaxDistance = nowDistance
+                        bonus = bonus + 1
+                        nowMaxDistanceCounter = 0
+                        rollout.bonuses = [b + 1 for b in rollout.bonuses]
 
                 curr_tuple += [bonus, state]
                 life_bonus += bonus
@@ -261,37 +348,14 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
                     print("Episode finished. Sum of shaped rewards: %.2f. Length: %d." % (rewards, length))
                 if 'distance' in info: print('Mario Distance Covered:', info['distance'])
 
-                global dis_dir             
-                global spawn_from
-                global spawn_from_switch
-                spawn_from_switch = True
-                dis_dir = 'distance/fine_tuned/1-3/30/225w/30_maxclip_0.5_pretrain_invincible_EPS0.2__' + str(task) + '.csv'
-                
-                if length > 1: # because when agent reach the goal, it will wait it to the time limit.   
-                    distance_list_start_from.append(spawn_from)
-                    distance_list.append(info['distance'])
-
-                    df = pd.DataFrame([], columns=["distance","start_from"])
-                    df['distance'] = distance_list
-                    df['start_from'] = distance_list_start_from
-                    df.to_csv(dis_dir, index=False)
-                    
-                    print("spawn_from:" + str(spawn_from))
-                    print('++++++++++++++++++++++++++')
-                    print(df.groupby('start_from').count())
-                    print('++++++++++++++++++++++++++')
-
-
-                global testing_counter
-                if(testing_counter < 100000):
-                    testing_counter = testing_counter + 1
-                """
-                else:
-                    assert False
-                """
-
-                print("testing_counter:%d" % testing_counter)
-                
+                global normalizationParameter
+                print("normalizationParameter: {0}".format(normalizationParameter))
+                print("nowMaxDistance: {0}".format(nowMaxDistance))
+                print("realMaxDistance: {0}".format(realMaxDistance))
+                print("timesToGoalCounter: {0}".format(timesToGoalCounter))
+                print("EPS_threshold: {0}".format(EPS_threshold))
+                print("EPS_step: {0}".format(EPS_step))
+                print("")
 
                 length = 0
                 rewards = 0
@@ -368,16 +432,6 @@ class A3C(object):
                         else:
                             self.local_ap_network = predictor = StateActionPredictor(env.observation_space.shape, numaction, designHead)
 
-            '''
-            feed_dict = {
-                self.local_network.x: batch.si,
-                self.ac: batch.a,
-                self.adv: batch.adv,
-                self.r: batch.r,
-                self.local_network.state_in[0]: batch.features[0],
-                self.local_network.state_in[1]: batch.features[1],
-            }
-            '''
             # Computing a3c loss: https://arxiv.org/abs/1506.02438
             # print('a3c.loss()') 
             self.tfNowDistance = tf.placeholder(tf.float32, [], name="tfNowDistance")
@@ -436,15 +490,6 @@ class A3C(object):
                 tf.summary.scalar("distance/last_distance", self.tfLastDistance)
                 tf.summary.scalar("distance/now_distance", self.tfNowDistance)
                 tf.summary.scalar("distance/gradient_distance", self.tfGradientDistance)
-                '''
-                summary = tf.Summary()
-                print(self.tfLastDistance)
-                summary.value.add(tag='distance/last_distance', simple_value=float(self.tfLastDistance))
-                summary.value.add(tag='distance/now_distance', simple_value=float(self.tfNowDistance))
-                summary.value.add(tag='distance/gradient_distance', simple_value=float(self.tfGradientDistance))
-                summary_writer.add_summary(summary, pi.global_step.eval())
-                summary_writer.flush()
-                '''
 
                 if self.unsup:
                     tf.summary.scalar("model/predloss", self.predloss)
@@ -518,7 +563,7 @@ class A3C(object):
         Take a rollout from the queue of the thread runner.
         """
         # get top rollout from queue (FIFO)
-        rollout = self.runner.queue.get(timeout=600.0)
+        rollout = self.runner.queue.get(timeout=1000.0)
         while not rollout.terminal:
             try:
                 # Now, get remaining *available* rollouts from queue and append them into
@@ -575,14 +620,26 @@ class A3C(object):
             feed_dict[self.local_ap_network.s2] = batch.si[1:]
             feed_dict[self.local_ap_network.asample] = batch.a
 
-        # fetched = sess.run(fetches, feed_dict=feed_dict) # train
-        fetched = sess.run([self.global_step], feed_dict=feed_dict) #test
-        global_step_counter=fetched[-1]
+        # training
+        fetched = sess.run(fetches, feed_dict=feed_dict)
+
+        # testing
+        #fetched = sess.run([self.global_step],feed_dict=feed_dict )
 
         if batch.terminal:
             print("Global Step Counter: %d"%fetched[-1])
+
+            global logDirCounter
+            if fetched[-1] >= logDirCounter and self.task == 0:
+                # copy subdirectory example
+                fromDirectory = "./tmp/ac4_1_4"
+                toDirectory = "./model/1-4/fine_tuned/ac4/30_maxclip_0.5_after_goal_flying_to_dead_0/" + str(self.task) + "_" + str(logDirCounter) + ".bk/"
+                logDirCounter = logDirCounter + 100000
+
+                copy_tree(fromDirectory, toDirectory)
 
         if should_compute_summary:
             self.summary_writer.add_summary(tf.Summary.FromString(fetched[0]), fetched[-1])
             self.summary_writer.flush()
         self.local_steps += 1
+

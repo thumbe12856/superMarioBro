@@ -1,6 +1,8 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 
+goal_distance = 2500
+
 def meanAndStd(file):
 	df = pd.read_csv(file)
 	df.fillna(0, inplace=True)
@@ -11,7 +13,7 @@ def meanAndStd(file):
 	start_from = 0
 	life_spent = 0
 	arrive_forty = 0
-	spawn_from_forty_dis = 1600
+	spawn_from_forty_dis = 1100
 
 	for index, row in df.iterrows():
 		if(start_from == 0):
@@ -46,16 +48,16 @@ def meanAndStd(file):
 
 plotDF = pd.DataFrame()
 firstData = True
-mode = "run_as_is/"
-level = "1-2/"
-iterations = "100w/"
-file = "40/distance_bonus40_"
+mode = "fine_tuned/"
+level = "1-3/"
+iterations = "225w/"
+file = "30/30_maxclip_0.5_pretrain_invincible_EPS0.2__"
 fileName = [
 	"distance/" + mode + level + iterations + file + "0.csv",
 	"distance/" + mode + level + iterations + file + "1.csv",
 	"distance/" + mode + level + iterations + file + "2.csv",
 	"distance/" + mode + level + iterations + file + "3.csv",
-	"distance/" + mode + level + iterations + file + "4.csv",
+	#"distance/" + mode + level + iterations + file + "4.csv",
 	#"distance/" + mode + level + iterations + "test_distance_bonus33_0.csv",
 	#"distance/" + mode + level + iterations + "test_distance_bonus33_1.csv",
 	#"distance/" + mode + level + iterations + "test_distance_bonus33_2.csv",
@@ -103,12 +105,15 @@ if(arrive_forty > 0):
 #print(plotDF.count())
 #plotDF = plotDF[~((plotDF["distance"] >= 3000) & (plotDF["distance"] <= 3100))]
 #print(plotDF.count())
-arrive_end = plotDF["distance"].count() / float(plotDF[plotDF["distance"] >= 3200]["distance"].count())
+#arrive_end = plotDF["distance"].count() / float(plotDF[plotDF["distance"] >= goal_distance]["distance"].count())
+print(plotDF[plotDF["distance"] < goal_distance]["distance"].count())
+print(plotDF[plotDF["distance"] >= goal_distance]["distance"].count())
+arrive_end = plotDF[plotDF["distance"] < goal_distance]["distance"].count() / float(plotDF[plotDF["distance"] >= goal_distance]["distance"].count())
 if(arrive_end > 0):
-	print("spent %f lives to arrive end." % (arrive_end))
+	print("spent %f lives to arrive goal." % (arrive_end))
 
-a = plotDF[plotDF["distance"] >= 3200]["distance"].count()
-b = plotDF[((plotDF["distance"] >= 3000) & (plotDF["distance"] <= 3100))]["distance"].count()
+#a = plotDF[plotDF["distance"] >= goal_distance]["distance"].count()
+#b = plotDF[((plotDF["distance"] >= 3000) & (plotDF["distance"] <= 3100))]["distance"].count()
 #print("{0} / {1}".format(a, b))
 
 #plotDF.plot()

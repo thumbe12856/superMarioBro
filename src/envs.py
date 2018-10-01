@@ -93,7 +93,7 @@ def create_mario(env_id, client_id, envWrap=True, record=False, outdir=None,
     if '-v' in env_id.lower():
         env_id = 'ppaquette/' + env_id
     else:
-        #env_id = 'ppaquette/SuperMarioBros-1-1-v0'  # shape: (224,256,3)=(h,w,c)
+        #env_id = 'ppaquette/SuperMarioBros-1-3-v0'  # shape: (224,256,3)=(h,w,c)
         env_id = 'ppaquette/SuperMarioBros-1-3-Tiles-v0'
 
     # Mario workaround: Simultaneously launching multiple vizdoom processes makes program stuck,
@@ -107,12 +107,11 @@ def create_mario(env_id, client_id, envWrap=True, record=False, outdir=None,
     env = modewrapper(acwrapper(env))
     #env = env_wrapper.MarioEnv(env, tilesEnv=False)
     env = env_wrapper.MarioEnv(env, tilesEnv=True)
-
     if record and outdir is not None:
         env = gym.wrappers.Monitor(env, outdir, force=True)
 
     if envWrap:
-        frame_skip = acRepeat if acRepeat>0 else 4
+        frame_skip = acRepeat if acRepeat > 0 else 4
         fshape = (42, 42)
         env.seed(None)
         if noLifeReward:
