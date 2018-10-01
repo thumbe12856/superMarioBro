@@ -105,6 +105,7 @@ def create_mario(env_id, client_id, envWrap=True, record=False, outdir=None,
     modewrapper = wrappers.SetPlayingMode('algo')
     acwrapper = wrappers.ToDiscrete()
     env = modewrapper(acwrapper(env))
+    #env = env_wrapper.MarioEnv(env, tilesEnv=False)
     env = env_wrapper.MarioEnv(env, tilesEnv=True)
 
     if record and outdir is not None:
