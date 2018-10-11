@@ -19,7 +19,7 @@ use_tf12_api = distutils.version.LooseVersion(tf.VERSION) >= distutils.version.L
 goalDistance = 2490
 timesDead = 0
 timesToGoalCounter = 0
-logDirCounter = 1000000
+logDirCounter = 500000
 nowDistance = 0
 nowMaxDistance = 800
 realMaxDistance = 0
@@ -28,14 +28,15 @@ lastDistance = -1
 normalizationParameter = 30.0
 distance_list = []
 frequentDeadDistance = {}
-bestTrajectory = []
+bestTrajectory = [[], []]
+#bestTrajectory = [[(40, 146), (40, 133), (42, 161), (49, 176), (57, 176), (66, 146), (76, 133), (88, 161), (100, 176), (110, 176), (122, 146), (135, 130), (149, 150), (163, 176), (178, 176), (201, 176), (225, 138), (249, 108), (273, 93), (294, 93), (311, 128), (331, 160), (355, 122), (379, 92), (403, 77), (427, 96), (450, 112), (473, 112), (497, 112), (521, 74), (545, 57), (569, 87), (593, 96), (612, 96), (626, 66), (626, 42), (626, 30), (631, 32), (641, 2), (652, 4), (657, 32), (664, 2), (699, 15), (712, 32), (724, 2), (748, 6), (762, 46), (776, 86), (790, 126), (804, 166), (821, 176), (838, 176), (852, 146), (866, 130), (880, 150), (893, 172), (906, 143), (917, 127), (925, 147), (949, 162), (963, 176), (977, 146), (991, 122), (1005, 118), (1019, 148), (1034, 176), (1053, 176), (1077, 176), (1101, 176), (1125, 138), (1149, 169), (1173, 209)], [(1067, 176), (1077, 176), (1091, 146), (1105, 122), (1119, 110), (1133, 112), (1152, 112), (1176, 74), (1200, 44), (1224, 29), (1248, 40), (1272, 64), (1296, 64), (1320, 66), (1342, 96), (1359, 96), (1382, 58), (1406, 28), (1430, 25), (1454, 62), (1478, 102), (1496, 112), (1519, 74), (1540, 44), (1557, 41), (1574, 78), (1595, 118), (1619, 144), (1643, 106), (1650, 76), (1656, 73), (1667, 80), (1686, 42), (1706, 12), (1721, 9), (1740, 46), (1764, 80), (1788, 80), (1812, 97), (1836, 96), (1860, 112), (1942, 86), (1957, 112), (1997, 112), (2018, 74), (2042, 44), (2066, 29), (2090, 40), (2194, 176), (2344, 153), (2359, 176), (2379, 176)]]
 tempTrajectory = []
 
 spawn_from = 0
 spawn_from_switch = True
 
 fixed_level = 2
-LEVEL = "1-3"
+LEVEL = "1-1"
 
 minClip = -0.1
 maxClip = 0.5
@@ -48,23 +49,27 @@ flyingMaxClip = -0.1
 
 EPS_START = 0.9  # e-greedy threshold start value
 EPS_END = 0.05  # e-greedy threshold end value
-EPS_DECAY = 500000  # e-greedy threshold decay
+EPS_DECAY = 200000  # e-greedy threshold decay
 EPS_threshold = 1
 EPS_step = 0
 
 # find the closest distance between the point and the best trojectory
-def closestDistance(x, y):
+def closestDistance(x, y, spawn_from):
     global bestTrajectory
     minDistance = 999999999
+    minAxis = (0, 0)
 
-    for b in bestTrajectory:
+    for b in bestTrajectory[spawn_from]:
         c = (x - b[0]) ** 2 + (y - b[1]) ** 2
         if c < minDistance:
             minDistance = c
+            minAxis = b
 
     if minDistance == 999999999:
         minDistance = 0
 
+    #print("nowX, nowY = ({0} {1})".format(x, y))
+    #print("min axis = {0}".format(minAxis))
     return math.sqrt(minDistance)
 
 def discount(x, gamma):
@@ -242,6 +247,8 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
 
             # epsilon greedy
             global EPS_step, EPS_threshold, EPS_END, EPS_START
+
+            global nowDistance, lastDistance, nowMaxDistance, nowMaxDistanceCounter, normalizationParameter, realMaxDistance, timesToGoalCounter, timesDead, goalDistance
             EPS_step = policy.global_step.eval()
 
             """
@@ -251,8 +258,11 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
                 #EPS_threshold = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * EPS_step / EPS_DECAY)
                 EPS_threshold = 0
             """
-            EPS_threshold = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * EPS_step / EPS_DECAY)
-            #EPS_threshold = 0
+            #EPS_threshold = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * EPS_step / EPS_DECAY)
+            if(nowDistance >= 2000):
+                EPS_threshold = 0.05
+            else:
+                EPS_threshold = 0
             sample = random.random()
 
             if(sample < EPS_threshold):
@@ -264,7 +274,6 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
             # run environment: get action_index from sampled one-hot 'action'
             stepAct = action.argmax()
             state, reward, terminal, info = env.step(stepAct)
-            global nowDistance, lastDistance, nowMaxDistance, nowMaxDistanceCounter, normalizationParameter, realMaxDistance, timesToGoalCounter, timesDead, goalDistance
             global nowY, last2Y, lastY, isflying, startFlyingIdx, flyingMaxClip
             global tempTrajectory, bestTrajectory
             global spawn_from, spawn_from_switch
@@ -275,7 +284,7 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
 
             if(spawn_from_switch):
                 spawn_from_switch = False
-                if(info['distance'] > 1000):
+                if(info['distance'] > 900):
                     spawn_from = 1
                 else:
                     spawn_from = 0
@@ -308,7 +317,13 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
                 reward = 0.
 
             # record x and y axis
+            #if(value_[0] >= maxClip):
             tempTrajectory.append((nowDistance, nowY))
+
+            # Is is because if the agent jump too high will cause the overflow of y.
+            # Like (100, 20) -> (100, 2) -> (100, 234)
+            if(tempTrajectory and nowY - tempTrajectory[-1][1] >= 180):
+                tempTrajectory.pop()
 
             """
             if render:
@@ -382,50 +397,38 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
                                 nowMaxDistance = nowMaxDistance - 100
                                 nowMaxDistanceCounter = nowMaxDistanceCounter + 1
 
-                        """
-                        if(EPS_step >= 200000 and isflying and lastY > 200):
-                            bonus = bonus if bonus <= flyingMaxClip else flyingMaxClip
-
-                            
-                            # because rollout max length is 20, so there may be updated before detect is terminal.
-                            if(startFlyingIdx < len(rollout.bonuses)):
-                                tempPreRollout = rollout.bonuses[:startFlyingIdx]
-                                tempNextRollout = [b if b < flyingMaxClip else flyingMaxClip for b in rollout.bonuses[startFlyingIdx:]]
-                                rollout.bonuses = tempPreRollout + tempNextRollout
-                            else:
-                                '''
-                                    i.e. length = 33, startFlyingIdx = 24, len(rollout.bonuses) = 12
-                                    then update rollout.bonuses[8:], because now bonus will be added at rollout.add(*curr_tuple)
-                                '''
-                                if(length - 1 - startFlyingIdx <= len(rollout.bonuses)):
-                                    tempPreRollout = rollout.bonuses[: - (length - 1 - startFlyingIdx)]
-                                    tempNextRollout = [b if b < flyingMaxClip else flyingMaxClip for b in rollout.bonuses[ - (length - 1 - startFlyingIdx):]]
-                                    rollout.bonuses = tempPreRollout + tempNextRollout
-                                else:
-                                    rollout.bonuses = [b if b < flyingMaxClip else flyingMaxClip for b in rollout.bonuses]
-                            startFlyingIdx = -1
-                            isflying = False
-                            """
-
                 else:                    
                     # if agent breaks the record of nowMaxDistance
                     if(nowDistance / 100 > nowMaxDistance / 100):
                         nowMaxDistance = nowDistance
                         
-                        if(nowMaxDistance / 100 > realMaxDistance / 100 and spawn_from == 0):
+                        bestTrajectory[spawn_from] = tempTrajectory
+                        """
+                        if(spawn_from == 0):
                             bestTrajectory = tempTrajectory
-                        
-                        if(EPS_step >= 1000000 and nowMaxDistance > 0):
+                            if(nowMaxDistance / 100 > realMaxDistance / 100):
+                                bestTrajectory = tempTrajectory
+                            elif(nowMaxDistance / 100 == realMaxDistance / 100 and len(tempTrajectory) < len(bestTrajectory)):
+                                bestTrajectory = tempTrajectory
+                            """
+
+                        if(EPS_step >= EPS_DECAY * 2 and nowMaxDistance > 0):
                             bonus = bonus + 1
                             nowMaxDistanceCounter = 0
                             rollout.bonuses = [b + 1 for b in rollout.bonuses]
                     else:
-                        if(EPS_step >= 1000000 and nowMaxDistance > 0):
+                        if(EPS_step >= EPS_DECAY * 2 and nowMaxDistance > 0):
                             # punishment
-                            if(spawn_from == 0):
-                                bonus = bonus - closestDistance(nowDistance, nowY) / normalizationParameter
+                            #if(spawn_from == 0):
+                            punishment = closestDistance(nowDistance, nowY, spawn_from) / normalizationParameter
+                            bonus = bonus - punishment
+                            if(bonus < minClip):
+                                bonus = minClip
+                                #print(closestDistance(nowDistance, nowY, spawn_from) / normalizationParameter)
+                                #raw_input('')
 
-                # if agent breaks the record of realMaxDistance and spawn from position 0
+
+                # if agent breaks the record of realMaxDistance
                 if(nowDistance > realMaxDistance):
                     realMaxDistance = nowDistance
 
@@ -732,10 +735,10 @@ class A3C(object):
             feed_dict[self.local_ap_network.asample] = batch.a
 
         # training
-        fetched = sess.run(fetches, feed_dict=feed_dict)
+        #fetched = sess.run(fetches, feed_dict=feed_dict)
 
         # testing
-        #fetched = sess.run([self.global_step],feed_dict=feed_dict)
+        fetched = sess.run([self.global_step],feed_dict=feed_dict)
 
         if batch.terminal:
             print("Global Step Counter: %d"%fetched[-1])
@@ -744,8 +747,8 @@ class A3C(object):
             if fetched[-1] >= logDirCounter and self.task == 0:
                 # copy subdirectory example
                 fromDirectory = "./tmp/ac4_" + LEVEL
-                toDirectory = "./model/" + LEVEL + "/fine_tuned/tile/ac4/30/30_bestTrajectory/" + str(self.task) + "_" + str(logDirCounter) + ".bk/"
-                logDirCounter = logDirCounter + 500000
+                toDirectory = "./model/" + LEVEL + "/scratch/tile/ac4/30/30_bestTrajectory/" + str(self.task) + "_" + str(logDirCounter) + ".bk/"
+                logDirCounter = logDirCounter + 100000
 
                 copy_tree(fromDirectory, toDirectory)
 
