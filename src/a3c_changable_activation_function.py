@@ -16,7 +16,7 @@ import operator
 from constants import constants
 use_tf12_api = distutils.version.LooseVersion(tf.VERSION) >= distutils.version.LooseVersion('0.12.0')
 
-goalDistance = 2490
+goalDistance = 3200
 timesDead = 0
 timesToGoalCounter = 0
 logDirCounter = 500000
@@ -36,10 +36,10 @@ spawn_from = 0
 spawn_from_switch = True
 
 fixed_level = 2
-LEVEL = "1-1"
+LEVEL = "1-2"
 
 minClip = -0.1
-maxClip = 0.5
+maxClip = 1
 nowY = 0
 lastY = 0
 last2Y = 0
@@ -70,7 +70,7 @@ def closestDistance(x, y, spawn_from):
 
     #print("nowX, nowY = ({0} {1})".format(x, y))
     #print("min axis = {0}".format(minAxis))
-    return math.sqrt(minDistance)
+    return math.sqrt(minDistance) / 100.0
 
 def discount(x, gamma):
     """
@@ -103,11 +103,13 @@ def process_rollout(rollout, gamma, lambda_=1.0, clip=False):
             rewards_plus_v += np.asarray(rollout.bonuses + [0])
         else:
         """
+        """
         if(len(rollout.bonuses) > 0):
             rewards_plus_v += np.asarray(rollout.bonuses + [-rollout.bonuses[-1]])
         else:
             rewards_plus_v += np.asarray(rollout.bonuses + [0])
-        #rewards_plus_v += np.asarray(rollout.bonuses + [0])        
+        """
+        rewards_plus_v += np.asarray(rollout.bonuses + [0])        
     if clip:
         rewards_plus_v[:-1] = np.clip(rewards_plus_v[:-1], -constants['REWARD_CLIP'], constants['REWARD_CLIP'])
     batch_r = discount(rewards_plus_v, gamma)[:-1]  # value network target
@@ -259,10 +261,7 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
                 EPS_threshold = 0
             """
             #EPS_threshold = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * EPS_step / EPS_DECAY)
-            if(nowDistance >= 2000):
-                EPS_threshold = 0.05
-            else:
-                EPS_threshold = 0
+            EPS_threshold = 0
             sample = random.random()
 
             if(sample < EPS_threshold):
@@ -373,7 +372,7 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
 
                         df = pd.DataFrame([], columns=["distance"])
                         df["distance"] = distance_list
-                        df.to_csv(dis_dir, index=False)
+                        #df.to_csv(dis_dir, index=False)
                         
                         print("distance mean:")
                         print('++++++++++++++++++++++++++')
@@ -391,36 +390,28 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
                     else:
                         timesDead = timesDead + 1
                         if(EPS_threshold <= 0.2 and nowMaxDistance > 0):
-                        #if(EPS_step >= 200000 and nowMaxDistance > 0):
-                            #if(nowMaxDistanceCounter < 2):
-                            if(nowDistance / 100 <= nowMaxDistance / 100 - 2 and nowMaxDistance > 800):
-                                nowMaxDistance = nowMaxDistance - 100
-                                nowMaxDistanceCounter = nowMaxDistanceCounter + 1
+                        #if(EPS_step >= EPS_DECAY and nowMaxDistance > 0):
+                            if(nowMaxDistanceCounter < 2):
+                                if(nowDistance / 100 <= nowMaxDistance / 100 - 2 and nowDistance > 800):
+                                    nowMaxDistance = nowMaxDistance - 100
+                                    nowMaxDistanceCounter = nowMaxDistanceCounter + 1
 
                 else:                    
                     # if agent breaks the record of nowMaxDistance
                     if(nowDistance / 100 > nowMaxDistance / 100):
                         nowMaxDistance = nowDistance
                         
-                        bestTrajectory[spawn_from] = tempTrajectory
-                        """
-                        if(spawn_from == 0):
-                            bestTrajectory = tempTrajectory
-                            if(nowMaxDistance / 100 > realMaxDistance / 100):
-                                bestTrajectory = tempTrajectory
-                            elif(nowMaxDistance / 100 == realMaxDistance / 100 and len(tempTrajectory) < len(bestTrajectory)):
-                                bestTrajectory = tempTrajectory
-                            """
+                        if(EPS_step <= EPS_DECAY * 5):
+                            bestTrajectory[spawn_from] = tempTrajectory
 
                         if(EPS_step >= EPS_DECAY * 2 and nowMaxDistance > 0):
                             bonus = bonus + 1
                             nowMaxDistanceCounter = 0
                             rollout.bonuses = [b + 1 for b in rollout.bonuses]
                     else:
-                        if(EPS_step >= EPS_DECAY * 2 and nowMaxDistance > 0):
+                        if(EPS_step >= EPS_DECAY * 5 and timesToGoalCounter < 3):
                             # punishment
-                            #if(spawn_from == 0):
-                            punishment = closestDistance(nowDistance, nowY, spawn_from) / normalizationParameter
+                            punishment = closestDistance(nowDistance, nowY, spawn_from) 
                             bonus = bonus - punishment
                             if(bonus < minClip):
                                 bonus = minClip
@@ -747,10 +738,10 @@ class A3C(object):
             if fetched[-1] >= logDirCounter and self.task == 0:
                 # copy subdirectory example
                 fromDirectory = "./tmp/ac4_" + LEVEL
-                toDirectory = "./model/" + LEVEL + "/scratch/tile/ac4/30/30_bestTrajectory/" + str(self.task) + "_" + str(logDirCounter) + ".bk/"
-                logDirCounter = logDirCounter + 100000
+                toDirectory = "./model/" + LEVEL + "/fine_tuned/tile/ac4/30/30_bestTrajectory/" + str(self.task) + "_" + str(logDirCounter) + ".bk/"
+                logDirCounter = logDirCounter + 200000
 
-                copy_tree(fromDirectory, toDirectory)
+                #copy_tree(fromDirectory, toDirectory)
 
         if should_compute_summary:
             self.summary_writer.add_summary(tf.Summary.FromString(fetched[0]), fetched[-1])
