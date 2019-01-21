@@ -3,7 +3,7 @@ The code is based on [Curiosity-driven Exploration by Self-supervised Prediction
 ## Memory Replay with Trajectory for Side-Scrolling Video Games ##
 Based on previous related works,to enhance the curiosity-driven exploration andutilize prior experience more effectively, we develop a new memory replay mechanism, whichconsists of two modules: Trajectory Replay Module (TRM) to record the agent moving trajectory information with much less space, and the Trajectory Optimization Module (TOM) to formulate the state information as reward.
 
-# 1.  This code is based on [TensorFlow](https://www.tensorflow.org/). To install, run these commands:
+### 1.  This code is based on [TensorFlow](https://www.tensorflow.org/). To install, run these commands:
   ```Shell
   # you might not need many of these, e.g., fceux is only for mario
   sudo apt-get install -y python-numpy python-dev cmake zlib1g-dev libjpeg-dev xvfb \
@@ -21,7 +21,7 @@ Based on previous related works,to enhance the curiosity-driven exploration andu
   python tom/src/go-vncdriver/build.py
   ```
 
-# 2. Setting World and Level of Super Mario Bros.
+### 2. Setting World and Level of Super Mario Bros.
   ```Shell
   cd tom/src/
   vim envs.py
@@ -39,15 +39,15 @@ Based on previous related works,to enhance the curiosity-driven exploration andu
   ```
 
 
-# 3. Training code
+### 3. Training code
   ```Shell
   cd tom/src/
   python train.py --default --env-id mario --noReward --log-dir tmp/ac4_$LEVEL --num-worker 4 --pretrain ./model/dir
   ```
-# Note
+### Note
 The log directory which is parameter of `log-dir` must be clean! Or the neural network will load the weight and bias from the dirty directory.
 
-# 4. Testing model
+### 4. Testing model
   ```Shell
   cd tom/src/
   vim worker.py
