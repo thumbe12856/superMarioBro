@@ -9,17 +9,78 @@ import threading
 import distutils.version
 import pandas as pd
 from distutils.dir_util import copy_tree
-
+import math
+import random
+import operator
+import os
 
 from constants import constants
 use_tf12_api = distutils.version.LooseVersion(tf.VERSION) >= distutils.version.LooseVersion('0.12.0')
 
-testingCounter = 0
-logDirCounter = 100000
-nowDistance = 0
-lastDistance = 0
+timesDead = 0
+timesToGoalCounter = 0
+logDirCounter = 1000000
 distance_list = []
+spawn_from = 0
+spawn_from_switch = True
 
+LEVEL = "1-3"
+goalDistance = {};
+goalDistance["1-1"] = 3266; # 1-1
+goalDistance["1-2"] = 3266; # 1-2
+goalDistance["1-3"] = 2514; # 1-3
+goalDistance["1-4"] = 2430; # 1-4    
+goalDistance["2-1"] = 3298; # 2-1
+goalDistance["2-2"] = 3266; # 2-2
+goalDistance["2-3"] = 3682; # 2-3
+goalDistance["2-4"] = 2430; # 2-4    
+goalDistance["3-1"] = 3298; # 3-1
+goalDistance["3-2"] = 3442; # 3-2    
+goalDistance["3-3"] = 2498; # 3-3
+goalDistance["3-4"] = 2430; # 3-4
+goalDistance["4-1"] = 3698; # 4-1
+goalDistance["4-2"] = 3266; # 4-2
+goalDistance["4-3"] = 2434; # 4-3
+goalDistance["4-4"] = 2942; # 4-4
+
+# TRM information
+nowDistance = 0
+nowMaxDistance = 0
+realMaxDistance = 0
+nowMaxDistanceCounter = 0
+lastDistance = -1
+normalizationParameter = 30.0
+nowY = 0
+lastY = 0
+maxY = 0
+frequentDeadDistance = {}
+bestTrajectory = [[], []]
+tempTrajectory = []
+minClip = -0.3
+maxClip = 0.5
+
+EPS_START = 0.9  # e-greedy threshold start value
+EPS_END = 0.05  # e-greedy threshold end value
+EPS_DECAY = 500000  # e-greedy threshold decay
+EPS_threshold = 1
+EPS_step = 0
+
+# find the closest distance between the point and the best trojectory
+def PenaltyModule(x, y, spawn_from):
+    global bestTrajectory, normalizationParameter, maxY
+    minDistance = 999999999
+    minAxis = (0, 0)
+
+    for b in bestTrajectory[spawn_from]:
+        c = (x - b[0]) ** 2 + (y - b[1]) ** 2
+        if c < minDistance:
+            minDistance = c
+            minAxis = b
+
+    if minDistance == 999999999:
+        minDistance = 0
+
+    return math.sqrt(minDistance) / math.sqrt(normalizationParameter * normalizationParameter + maxY * maxY)
 
 def discount(x, gamma):
     """
@@ -46,7 +107,7 @@ def process_rollout(rollout, gamma, lambda_=1.0, clip=False):
     # V_t <-> r_t + gamma*r_{t+1} + ... + gamma^n*r_{t+n} + gamma^{n+1}*V_{n+1}
     rewards_plus_v = np.asarray(rollout.rewards + [rollout.r])  # bootstrapping
     if rollout.unsup:
-        rewards_plus_v += np.asarray(rollout.bonuses + [0])
+        rewards_plus_v += np.asarray(rollout.bonuses + [0])        
     if clip:
         rewards_plus_v[:-1] = np.clip(rewards_plus_v[:-1], -constants['REWARD_CLIP'], constants['REWARD_CLIP'])
     batch_r = discount(rewards_plus_v, gamma)[:-1]  # value network target
@@ -155,7 +216,7 @@ class RunnerThread(threading.Thread):
             # won't die with it, unless the timeout is set to some large number.  This is an empirical
             # observation.
 
-            self.queue.put(next(rollout_provider), timeout=600.0)
+            self.queue.put(next(rollout_provider), timeout=1000.0)
 
 
 def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
@@ -183,37 +244,152 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
             fetched = policy.act(last_state, *last_features)
             action, value_, features = fetched[0], fetched[1], fetched[2:]
 
+            # Epsilon Greedy
+            global EPS_step, EPS_threshold, EPS_END, EPS_START
+            global nowDistance, lastDistance, nowMaxDistance, nowMaxDistanceCounter, normalizationParameter, realMaxDistance, timesToGoalCounter, timesDead, goalDistance, LEVEL
+            EPS_step = policy.global_step.eval()
+            #EPS_threshold = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * EPS_step / EPS_DECAY)
+            EPS_threshold = 0
+
+            sample = random.random()
+            if(sample < EPS_threshold):
+                randomAction = np.zeros(action.shape[0])
+                randomAction[random.randint(0, action.shape[0] - 1)] = 1
+                action = randomAction
+
             # run environment: get action_index from sampled one-hot 'action'
             stepAct = action.argmax()
             state, reward, terminal, info = env.step(stepAct)
-            global nowDistance
-            global lastDistance
+            global nowY, lastY, maxY
+            global tempTrajectory, bestTrajectory
+            global spawn_from, spawn_from_switch
+
+            # check if the agent spawns from check point
+            if(spawn_from_switch):
+                spawn_from_switch = False
+                if(info['distance'] > 900):
+                    spawn_from = 1
+                else:
+                    spawn_from = 0
+
+            # TRM record information
+            # lastDistance is x_{t-1}, lastY is y_{t-1}, nowDistance is x_t and nowY is y_t
             lastDistance = nowDistance
             nowDistance = info['distance']
-
+            lastY = nowY
+            nowY = info['curr_y_position']
+            
             if noReward:
                 reward = 0.
-            if render:
-                env.render()
+
+            # record x_t and y_t axis
+            tempTrajectory.append((nowDistance, nowY))
+
+            # Is is because if the agent jump too high will cause the overflow of y.
+            # Like (100, 20) -> (100, 2) -> (100, 234)
+            isYOverflow = False
+            if(tempTrajectory and nowY - tempTrajectory[-1][1] >= 180):
+                tempTrajectory.pop()
+                isYOverflow = True
 
             #rollout.add(self, state, action, reward, value, terminal, features, bonus=None, end_state=None)
             curr_tuple = [last_state, action, reward, value_, terminal, last_features]
             if predictor is not None:
                 bonus = predictor.pred_bonus(last_state, state, action)
                 
-                # testing bonus
-                global nowDistance
-                global lastDistance
-                diff = (nowDistance - lastDistance) / 40.0
-                #diff = diff if diff >= -1 else -1
-                if(diff < 0):
-                    diff = -0.10 if diff < -0.10 else diff
-                else:
-                    diff = diff if diff <= 1 else 1
-                bonus = bonus + diff
+                tempY = nowY - lastY
+                if(not isYOverflow and tempY > maxY):
+                    maxY = tempY
+
+                # Normalization Module, diff is \tilde{d_t}
+                diff = nowDistance - lastDistance
+                diff = (2 / float(2 * normalizationParameter)) * (diff + normalizationParameter) - 1
                 
+                # Clipping the reward
+                if(diff < minClip):
+                    diff = minClip
+                elif(diff > maxClip):
+                    diff = maxClip
+
+                # bonus is the reward r_t
+                bonus = bonus + diff
+
+                if(terminal):
+                    print("value_[0]: " + str(value_[0]))
+                    global spawn_from_switch
+                    spawn_from_switch = True
+
+                    # because the agent will keep being terminal at goal until time end.
+                    if(length > 1):
+
+                        # TRM records the maximum frequency location that agent dies.
+                        frequentDeadDistance.setdefault(nowDistance / 100 * 100, 0)
+                        frequentDeadDistance[nowDistance / 100 * 100] = frequentDeadDistance[nowDistance / 100 * 100] + 1
+                        
+                        global distance_list, LEVEL
+                        dis_dir = "./model/" + LEVEL + "/TOM/"
+                        if(not os.path.exists(dis_dir)):
+                            os.makedirs(dis_dir)
+
+                        distance_list.append(nowDistance)
+
+                        df = pd.DataFrame([], columns=["distance"])
+                        df["distance"] = distance_list
+                        df.to_csv(dis_dir + str(task) + ".csv", index=False)
+                        
+                        print("distance mean:")
+                        print('++++++++++++++++++++++++++')
+                        print(df["distance"].mean())
+                        print(frequentDeadDistance[nowDistance / 100 * 100])
+                        print('++++++++++++++++++++++++++')
+
+                    # arrive the the goal
+                    if(nowDistance >= goalDistance[LEVEL] - 50):
+                        bonus = 1
+                        nowMaxDistance = max(frequentDeadDistance.iteritems(), key=operator.itemgetter(1))[0]
+                        nowMaxDistanceCounter = 0
+                        if(length > 1):
+                            timesToGoalCounter = timesToGoalCounter + 1
+                    else:
+                        timesDead = timesDead + 1
+                        if(nowMaxDistanceCounter < 2):
+                            if(nowDistance / 100 <= nowMaxDistance / 100 - 2):
+                                nowMaxDistanceCounter = nowMaxDistanceCounter + 1
+
+                else:                    
+                    # If agent breaks the record of nowMaxDistance, 
+                    # then record the trajectory as best trajectory.
+                    if(nowDistance / 100 > nowMaxDistance / 100):
+                        nowMaxDistance = nowDistance
+                        
+                        if(EPS_step <= EPS_DECAY * 10 or timesToGoalCounter < 20):
+                            bestTrajectory[spawn_from] = tempTrajectory
+
+                        if(EPS_step >= EPS_DECAY * 2 and nowMaxDistance > 0):
+                            bonus = bonus + 1
+                            nowMaxDistanceCounter = 0
+                            rollout.bonuses = [b + 1 for b in rollout.bonuses]
+                    else:
+                        if(EPS_step >= EPS_DECAY * 2 and EPS_step <= EPS_DECAY * 4 or timesToGoalCounter < 10):
+                            
+                            # penalty is \tilde{p_t}
+                            penalty = PenaltyModule(nowDistance, nowY, spawn_from) 
+
+                            # To remove Penalty Module, just set the penalty = 0
+                            #penalty = 0
+
+                            bonus = bonus - penalty
+                            if(bonus < minClip):
+                                bonus = minClip
+
+
+                # if agent breaks the record of realMaxDistance
+                if(nowDistance > realMaxDistance):
+                    realMaxDistance = nowDistance
+
                 curr_tuple += [bonus, state]
-                life_bonus += bonus
+                #life_bonus += bonus
+                life_bonus = sum(rollout.bonuses)
                 ep_bonus += bonus
 
             # collect the experience
@@ -228,6 +404,9 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
             timestep_limit = env.spec.tags.get('wrapper_config.TimeLimit.max_episode_steps')
             if timestep_limit is None: timestep_limit = env.spec.timestep_limit
             if terminal or length >= timestep_limit:
+                # reset tempTrajectory
+                tempTrajectory = []
+
                 # prints summary of each life if envWrap==True else each game
                 if predictor is not None:
                     print("Episode finished. Sum of shaped rewards: %.2f. Length: %d. Bonus: %.4f." % (rewards, length, life_bonus))
@@ -236,24 +415,16 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
                     print("Episode finished. Sum of shaped rewards: %.2f. Length: %d." % (rewards, length))
                 if 'distance' in info: print('Mario Distance Covered:', info['distance'])
 
-                print('++++++++++++++++++++++++++')
-                print(info['distance'])
-                print(type(info['distance']))
-                distance_list.append(info['distance'])
-                df = pd.DataFrame([], columns=["distance"])
-                df['distance'] = distance_list
-                #df.to_csv('./fine_tune_model/1-2/20w/distance' + str(task) + '.csv', index=False)
-                df.to_csv('./distance' + str(task) + '.csv', index=False)
-                print('++++++++++++++++++++++++++')
-
-                """
-                global testingCounter
-                if(testingCounter < 200):
-                    print("testingCounter: " + str(testingCounter))
-                    testingCounter = testingCounter + 1
-                else:
-                    assert False
-                """
+                global normalizationParameter
+                print("normalizationParameter: {0}".format(normalizationParameter))
+                print("nowMaxDistance: {0}".format(nowMaxDistance))
+                print("realMaxDistance: {0}".format(realMaxDistance))
+                print("timesToGoalCounter: {0}".format(timesToGoalCounter))
+                print("timesDead: {0}".format(timesDead))
+                print("EPS_threshold: {0}".format(EPS_threshold))
+                print("EPS_step: {0}".format(EPS_step))
+                #print("Best trojectory: {0}".format(bestTrajectory))
+                print("")
 
                 length = 0
                 rewards = 0
@@ -461,7 +632,7 @@ class A3C(object):
         Take a rollout from the queue of the thread runner.
         """
         # get top rollout from queue (FIFO)
-        rollout = self.runner.queue.get(timeout=600.0)
+        rollout = self.runner.queue.get(timeout=1000.0)
         while not rollout.terminal:
             try:
                 # Now, get remaining *available* rollouts from queue and append them into
@@ -522,21 +693,26 @@ class A3C(object):
         fetched = sess.run(fetches, feed_dict=feed_dict)
 
         # testing
-        #fetched = sess.run([self.global_step],feed_dict=feed_dict )
+        #fetched = sess.run([self.global_step],feed_dict=feed_dict)
 
         if batch.terminal:
             print("Global Step Counter: %d"%fetched[-1])
 
-            global logDirCounter
+            global logDirCounter, LEVEL
             if fetched[-1] >= logDirCounter and self.task == 0:
                 # copy subdirectory example
-                fromDirectory = "./tmp/fine_tuned/newMethod"
-                toDirectory = "./model/newMethodModel/fine_tuned/1-3/pretrain_1-2_100w/" + str(self.task) + "_" + str(logDirCounter) + ".bk/"
-                logDirCounter = logDirCounter + 100000
+                fromDirectory = "./tmp/ac4_" + LEVEL
+                toDirectory = "./model/" + LEVEL + "/TOM/" + str(self.task) + "_" + str(logDirCounter) + ".bk/"
+                logDirCounter = logDirCounter + 500000
 
+                if(not os.path.exists(toDirectory)):
+                    os.makedirs(toDirectory)
                 copy_tree(fromDirectory, toDirectory)
 
         if should_compute_summary:
             self.summary_writer.add_summary(tf.Summary.FromString(fetched[0]), fetched[-1])
             self.summary_writer.flush()
         self.local_steps += 1
+
+
+

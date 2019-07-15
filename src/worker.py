@@ -6,9 +6,9 @@ import logging
 import sys, signal
 import time
 import os
-#from a3c import A3C
-#from a3c_test_dis import A3C
-from a3c_changable_activation_function import A3C
+#from ICM import A3C
+from ICM_TOM import A3C
+#from test_dis import A3C
 from envs import create_env
 from constants import constants
 import distutils.version

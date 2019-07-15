@@ -14,13 +14,21 @@ use_tf12_api = distutils.version.LooseVersion(tf.VERSION) >= distutils.version.L
 
 nowDistance = 0
 lastDistance = 0
+
+minClip = -0.1
+maxClip = 0.5
+
 # distance_list =[]
 # distance_list_from_z =[]
 # distance_list_from_f =[]
 distance_list_start_from = []
 distance_list = []
-testingCounter = 0
-
+testing_counter = 0
+normalization_constant = 30.0
+spawn_from_switch = True
+spawn_from = 0
+spawn_from_saved_point_distance = 1000
+#dis_dir = 'test.csv'
 
 def discount(x, gamma):
     """
@@ -178,7 +186,7 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
     while True:
         terminal_end = False
         rollout = PartialRollout(predictor is not None)
-
+        
         for _ in range(num_local_steps):
             # run policy
             fetched = policy.act(last_state, *last_features)
@@ -192,6 +200,15 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
             lastDistance = nowDistance
             nowDistance = info['distance']
 
+            global spawn_from, spawn_from_saved_point_distance
+            global spawn_from_switch
+            if(spawn_from_switch):
+                spawn_from_switch = False
+                if(info['distance'] > spawn_from_saved_point_distance):
+                    spawn_from = 1
+                else:
+                    spawn_from = 0
+
             if noReward:
                 reward = 0.
             if render:
@@ -203,14 +220,23 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
                 bonus = predictor.pred_bonus(last_state, state, action)
                 
                 # testing bonus
-                global nowDistance
-                global lastDistance
-                diff = (nowDistance - lastDistance) / 33.0
-                bonus = bonus + diff
-
-                #print(bonus)
-                #print()
+                global nowDistance, lastDistance
+                global minClip, maxClip
+                diff = (nowDistance - lastDistance) / normalization_constant
                 
+                
+                #diff = diff / float(normalizationParameter)
+                diff = (2 / float(2 * normalization_constant)) * (diff + normalization_constant) - 1
+                
+                if(diff < minClip):
+                    diff = minClip
+                elif(diff > maxClip):
+                    diff = maxClip
+                bonus = bonus + diff
+                
+                if(terminal):
+                    bonus = -0.1
+
                 curr_tuple += [bonus, state]
                 life_bonus += bonus
                 ep_bonus += bonus
@@ -234,82 +260,37 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, predictor,
                 else:
                     print("Episode finished. Sum of shaped rewards: %.2f. Length: %d." % (rewards, length))
                 if 'distance' in info: print('Mario Distance Covered:', info['distance'])
-                
-                # print('++++++++++++++++++++++++++')
-                # print(info['distance'])
-                # print(type(info['distance']))
-                # distance_list.append(info['distance'])
-                # df = pd.DataFrame([], columns=["distance"])
-                # df['distance'] = distance_list
-                # df.to_csv('distance'+str(task)+'.csv', index=False)
-                # print('++++++++++++++++++++++++++')
-                
-                # if len(distance_list)>105:
-                #     assert False
 
-
-             
-                distance_file = 'distance/fine_tuned/1-2/distance_bonus33_20w_'+str(task)+'.csv'
-                m_dis = info['distance']
-                if len(distance_list) ==0:
-                     previous_m_dis = m_dis
-                     
-                if m_dis <1300:
-                    
-                    distance_list_start_from.append(0)
+                global dis_dir             
+                global spawn_from
+                global spawn_from_switch
+                spawn_from_switch = True
+                dis_dir = 'distance/fine_tuned/1-3/30/174w/BT_' + str(task) + '.csv'
+                
+                if length > 1: # because when agent reach the goal, it will wait it to the time limit.   
+                    distance_list_start_from.append(spawn_from)
                     distance_list.append(info['distance'])
 
                     df = pd.DataFrame([], columns=["distance","start_from"])
                     df['distance'] = distance_list
                     df['start_from'] = distance_list_start_from
-                    df.to_csv(distance_file, index=False)
+                    df.to_csv(dis_dir, index=False)
                     
+                    print("spawn_from:" + str(spawn_from))
                     print('++++++++++++++++++++++++++')
                     print(df.groupby('start_from').count())
                     print('++++++++++++++++++++++++++')
 
 
-                    previous_m_dis = m_dis
-
-                else :
-                    
-                    if previous_m_dis < 1300:
-                        
-                        distance_list_start_from.append(0)
-                        distance_list.append(info['distance'])
-
-                        df = pd.DataFrame([], columns=["distance","start_from"])
-                        df['distance'] = distance_list
-                        df['start_from'] = distance_list_start_from
-                        df.to_csv(distance_file, index=False)
-
-                        print('++++++++++++++++++++++++++')
-                        print(df.groupby('start_from').count())
-                        print('++++++++++++++++++++++++++')
-                    
-                    else:
-                        if previous_m_dis < 3220:
-
-                            distance_list_start_from.append(1)
-                            distance_list.append(info['distance'])
-
-                            df = pd.DataFrame([], columns=["distance","start_from"])
-                            df['distance'] = distance_list
-                            df['start_from'] = distance_list_start_from
-                            df.to_csv(distance_file, index=False)
-
-                            print('++++++++++++++++++++++++++')
-                            print(df.groupby('start_from').count())
-                            print('++++++++++++++++++++++++++')
-
-                    previous_m_dis =m_dis
-
-                global testingCounter
-                if(testingCounter < 200):
-                    print("testingCounter: " + str(testingCounter))
-                    testingCounter = testingCounter + 1
+                global testing_counter
+                if(testing_counter < 100000):
+                    testing_counter = testing_counter + 1
+                """
                 else:
                     assert False
+                """
+
+                print("testing_counter:%d" % testing_counter)
                 
 
                 length = 0
@@ -594,22 +575,12 @@ class A3C(object):
             feed_dict[self.local_ap_network.s2] = batch.si[1:]
             feed_dict[self.local_ap_network.asample] = batch.a
 
-        #fetched = sess.run(fetches, feed_dict=feed_dict) # train
+        # fetched = sess.run(fetches, feed_dict=feed_dict) # train
         fetched = sess.run([self.global_step], feed_dict=feed_dict) #test
         global_step_counter=fetched[-1]
-        if  global_step_counter>500000:
-            assert False
+
         if batch.terminal:
             print("Global Step Counter: %d"%fetched[-1])
-            
-            # global logDirCounter
-            # if fetched[-1] >= logDirCounter and self.task==0:
-            #     # copy subdirectory example
-            #     fromDirectory = "./scratch/1-2"
-            #     toDirectory = "./scratch/1-2_" + str(fetched[-1]) + ".bk/"
-            #     logDirCounter = logDirCounter + 100000
-
-            #     copy_tree(fromDirectory, toDirectory)
 
         if should_compute_summary:
             self.summary_writer.add_summary(tf.Summary.FromString(fetched[0]), fetched[-1])

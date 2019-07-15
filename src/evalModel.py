@@ -1,7 +1,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 
-goal_distance = 2500
+goal_distance = 3250
 
 def meanAndStd(file):
 	df = pd.read_csv(file)
@@ -49,9 +49,9 @@ def meanAndStd(file):
 plotDF = pd.DataFrame()
 firstData = True
 mode = "fine_tuned/"
-level = "1-3/"
-iterations = "225w/"
-file = "30/30_maxclip_0.5_pretrain_invincible_EPS0.2__"
+level = "1-2/bt/"
+iterations = ""
+file = "BT_"
 fileName = [
 	"distance/" + mode + level + iterations + file + "0.csv",
 	"distance/" + mode + level + iterations + file + "1.csv",
@@ -108,7 +108,9 @@ if(arrive_forty > 0):
 #arrive_end = plotDF["distance"].count() / float(plotDF[plotDF["distance"] >= goal_distance]["distance"].count())
 print(plotDF[plotDF["distance"] < goal_distance]["distance"].count())
 print(plotDF[plotDF["distance"] >= goal_distance]["distance"].count())
-arrive_end = plotDF[plotDF["distance"] < goal_distance]["distance"].count() / float(plotDF[plotDF["distance"] >= goal_distance]["distance"].count())
+deadTimes = plotDF[plotDF["distance"] < goal_distance]["distance"].count()
+goalTime = float(plotDF[plotDF["distance"] >= goal_distance]["distance"].count())
+arrive_end =  deadTimes / goalTime
 if(arrive_end > 0):
 	print("spent %f lives to arrive goal." % (arrive_end))
 
