@@ -51,8 +51,8 @@ The log directory which is parameter of `log-dir` must be clean! Or the neural n
   ```Shell
   cd tom/src/
   vim worker.py
-    #from a3c_TOM import A3C # comment the line
-    from a3c_test_dis import A3C # uncomment the line
+    #from ICM_TOM import A3C # comment the line
+    from test_dis import A3C # uncomment the line
   
   python train.py --default --env-id mario --noReward --log-dir tmp/testing_mario --num-worker 4 --pretrain ./model/testing/model/dir
   ```
